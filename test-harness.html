@@ -191,6 +191,54 @@ ifr.addEventListener('load',()=>{
     ok('「主体底色」已移除', !$('mainBg')&&!d.querySelector('#mainSw'));
     ok('「字体族」选择器已移除', !$('fontFamily'));
 
+    // ---------- 8. 回归：插入元素后主题色仍可反复切换 ----------
+    const btns=[...d.querySelectorAll('#themeGrid .theme-btn')];
+    const headEl=q('h2');
+    btns[1].click(); const th1=headEl.style.color;
+    const tmpPar=plainParagraph();
+    selectIn(tmpPar); w.insertColorBlock();
+    btns[2].click(); const th2=headEl.style.color;
+    btns[3].click(); const th3=headEl.style.color;
+    ok('插入元素后主题色仍可反复切换（角色表未被清空）',
+       th1!==th2&&th2!==th3, [th1,th2,th3].join(' → '));
+
+    // ---------- 9. 格式刷（拾取 → 套用） ----------
+    const srcEl=q('h2');
+    { const r=d.createRange(); r.setStart(srcEl.firstChild||srcEl,0); r.collapse(true);
+      sel().removeAllRanges(); sel().addRange(r); }
+    w.pickFormat();
+    ok('格式刷：拾取后进入激活状态', $('formatBrushBtn').classList.contains('on'));
+    const brushTarget=plainParagraph();
+    const brushProbe=()=>{ const sp=brushTarget.querySelector('span');
+      return w.getComputedStyle(sp||brushTarget).fontSize+'/'+w.getComputedStyle(sp||brushTarget).color; };
+    const brushBefore=brushProbe();
+    selectIn(brushTarget);
+    w.toggleFormatBrush();
+    ok('格式刷：套用后目标文字格式改变', brushProbe()!==brushBefore, brushBefore+' → '+brushProbe());
+    ok('格式刷：套用后自动解除', !$('formatBrushBtn').classList.contains('on'));
+    ok('格式刷：状态栏有反馈', /格式刷已套用/.test($('status').textContent), $('status').textContent.slice(0,38));
+
+    // ---------- 10. 删除整个色块（保留文字） ----------
+    const blkDel=[...d.querySelectorAll('#preview section')].filter(s=>s.style.backgroundColor
+      &&!/\d+px\s+solid/.test(s.style.border||'')&&s!==rootSec0).pop();
+    ok('删除前存在色块容器', !!blkDel);
+    const keepTxt=blkDel?blkDel.textContent.trim().slice(0,8):'';
+    { const r=d.createRange(); r.setStart(blkDel.firstChild||blkDel,0); r.collapse(true);
+      sel().removeAllRanges(); sel().addRange(r); }
+    w.unwrapContainer('block','色块');
+    ok('删除色块：容器已移除', !d.querySelector('#preview').contains(blkDel));
+    ok('删除色块：其中的文字保留', [...d.querySelectorAll('#preview p')].some(p=>p.textContent.includes(keepTxt)),
+       '文字「'+keepTxt+'」仍在');
+    ok('删除色块：状态栏提示保留文字', /文字已保留/.test($('status').textContent));
+
+    // ---------- 11. 折叠光标（未选文字）下按钮仍生效 ----------
+    const bqCard=q('blockquote');
+    { const r=d.createRange(); r.setStart(bqCard.firstChild||bqCard,0); r.collapse(true);
+      sel().removeAllRanges(); sel().addRange(r); }
+    $('cardBorderNone').dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
+    $('cardBorderNone').click();
+    ok('折叠光标下「清除卡片边框」生效（工具条不抢焦点）',
+       !bqCard.style.border&&!bqCard.style.borderLeft, bqCard.getAttribute('style')||'(空)');
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
