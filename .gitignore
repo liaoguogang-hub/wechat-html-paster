@@ -12,3 +12,8 @@ desktop.ini
 # Misc
 *.log
 *.tmp
+
+# 测试脚手架：只在本地跑，不进仓库
+test-harness.html
+test-layout.html
+test-wechat-spec.html

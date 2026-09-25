@@ -127,17 +127,17 @@ wechat-html-paster/
 ├── README.md               # 本文件
 ├── CHANGELOG.md            # 版本历史
 ├── docs/PLAN-v3.0.0.md     # v3 调研结论 + 设计（nihaotk 实测 / 微信规则源码）
-├── test-harness.html       # 功能回归（45 项断言）
-├── test-layout.html        # 布局 / 隔离 / 交互回归（27 项断言）
-├── test-wechat-spec.html   # 公众号合规自检（19 项断言，移植官方规则）
 └── versions/
     ├── v1.0.0.html         # v1 原始版本存档
     └── v2.0.0.html         # v2 版本存档
 ```
 
+三套测试脚手架（`test-harness.html` / `test-layout.html` / `test-wechat-spec.html`）只在本地保留，
+已写入 `.gitignore`，不进仓库。
+
 ## 测试
 
-零依赖，用系统自带浏览器（Edge / Chrome）headless 跑：
+零依赖，用系统自带浏览器（Edge / Chrome）headless 跑（测试文件在本地，未纳入版本管理）：
 
 ```bash
 msedge --headless=new --disable-gpu --allow-file-access-from-files \
