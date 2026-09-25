@@ -234,6 +234,40 @@ overlapping = lineCount >= 2 && (range 内容高 / lineCount) < fontSize * 0.95;
 > 顺带一提：上面对照文章正文是 **15px 字号 / 1.9 行高**。同样的留白下，字号越大每行字越少，
 > 看起来就越"窄"——如果你的稿子是 16～17px，正文行会比这篇少 1～2 个字，观感也会更"窄"。
 
+#### 为什么这 20px 无法突破（用真浏览器在线上页面实测）
+
+用 CDP 连真实浏览器打开线上文章（390px 视口）逐层量，拿到了完整证据链：
+
+```
+body                 w=390   padding 0
+#page-content        w=390   padding-left/right = 20px   ← 微信自己加的 20px 在这里
+.rich_media_area_primary_inner  left=20  w=350          ← 正文可用区 350px
+#js_content           left=20  w=350   overflow = hidden ← ★ 正文容器会裁掉溢出
+#js_content > section left=20  w=350   max-width = 100%  ← ★ 后代被钉死在这个宽度
+#js_content p         left=20  w=350
+```
+
+给文章自己的根 `<section>` 加 `margin-left/right:-20px`，实测结果：
+
+```
+section  → left 0、宽度仍是 350（没变宽，只是整体左移 20px）
+p        → 同上，左起 0、宽 350
+```
+
+**宽度没涨**，因为正文后代被 `max-width:100%`（微信 `!important` 规则）钉在容器宽度上。
+再做一个对照实验：先注掉这个限制（`max-width:none!important`）再加负边距 ——
+
+```
+section → 宽度 374 → 414（撑满视口）  但 p.left = -20
+```
+
+也就是说：**即使突破了 max-width 锁，`#js_content` 的 `overflow:hidden` 会把超出部分裁掉**——
+文字左边 20～40px 会被切掉，比不改更糟。
+
+**结论：这 20px/侧 在设计上就是不可突破的**（容器裁切 + 后代 max-width 锁双保险）。
+好消息是：**你的正文已经占满可用区的 100%**（根 `<section>` 宽度 = 容器宽度 = 350px），
+所以没有"被浪费"的宽度可以捡回来。
+
 **关键教训：不要试图用负 `margin` 抵消第②层 —— 实测无效。** 微信编辑器画布会裁切/重置最外层负边距，
 `margin-left:-15px` 粘进去后正文宽度一点没变（用户实测反馈）。所以正确的做法不是跟微信较劲，
 而是**把第②层模拟进预览**，让工具里看到的宽度 = 公众号里的宽度：
