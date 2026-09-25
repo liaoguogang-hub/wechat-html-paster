@@ -198,10 +198,12 @@ ifr.addEventListener('load',()=>{
     ok('样式面板按「全局 / 局部」两块组织',
        [...styleMenu.querySelectorAll('.block-label')].map(e=>e.textContent.trim()).join('|')==='全局 · 影响整篇|局部 · 只改光标处',
        [...styleMenu.querySelectorAll('.block-label')].map(e=>e.textContent.trim()).join('|'));
-    ok('全局=主题色+整篇底色；局部=标题配色+色块+卡片',
+    ok('全局块含主题色/页边距/整篇字体/整篇底色，局部块含标题配色/色块/卡片',
        (()=>{ const b=[...styleMenu.querySelectorAll('.panel-block')];
          const g=x=>[...x.querySelectorAll('.mgroup-name')].map(e=>e.textContent.trim()).join('/');
-         return b.length===2&&g(b[0])==='主题色/整篇底色'&&g(b[1])==='标题配色/色块/卡片'; })(),
+         const gs=b.length?g(b[0]):'', ls=b.length>1?g(b[1]):'';
+         return b.length===2&&/主题色/.test(gs)&&/页边距/.test(gs)&&/字体/.test(gs)&&/整篇底色/.test(gs)
+           &&/标题配色/.test(ls)&&/色块/.test(ls)&&/卡片/.test(ls); })(),
        [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent.trim()).join('/'));
     ok('样式面板高度可控（不再超长）',
        styleMenu.querySelector('.menu-panel').getBoundingClientRect().height<=d.documentElement.clientHeight-80,
@@ -449,6 +451,16 @@ ifr.addEventListener('load',()=>{
     ok('色块组含边框颜色/位置/宽度三个控件',
        !!$('blockBorderColor')&&!!$('blockBorderSel')&&!!$('blockBorderWidth')&&
        [...$('blockBorderSel').options].map(o=>o.value).join('/')==='all/left/none');
+    // ---------- 20. 零 margin 必须显式输出（否则退回浏览器默认外边距，正文间距变大） ----------
+    const doc20=new DOMParser().parseFromString($('output').value,'text/html');
+    const noMargin=[...doc20.body.querySelectorAll('p,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote')]
+      .filter(e=>!/margin\s*:/.test(e.getAttribute('style')||''));
+    ok('块级元素的 margin 全部显式写出（不会退回默认外边距）', noMargin.length===0,
+       noMargin.slice(0,3).map(e=>e.tagName).join(',')||'0 个缺失');
+    // 页边距 / 字体 控件存在
+    ok('样式面板含页边距（左右/上下）控件', !!$('pagePadX')&&!!$('pagePadY'));
+    ok('格式菜单与样式面板都含字体选项', !!$('fontFamilySel')&&!!$('fontFamilyAll'));
+    ok('字体默认「不设置」（合规）', $('fontFamilySel').value===''&&$('fontFamilyAll').value==='');
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
