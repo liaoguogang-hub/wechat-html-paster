@@ -16,6 +16,24 @@ ifr.addEventListener('load',()=>{
     const sel=()=>ifr.contentWindow.getSelection();
     const selectIn=(el)=>{ const r=d.createRange(); r.selectNodeContents(el); sel().removeAllRanges(); sel().addRange(r); return r; };
     const q=(s)=>d.querySelector('#preview '+s);
+    // 取一个「无容器祖先」的普通段落（既不在色块/卡片内，也不是根节点）
+    const plainParagraph=()=>{
+      const rootSec=d.querySelector('#preview > section');
+      const mains=new Set([...rootSec.children].filter(c=>/^(DIV|SECTION)$/.test(c.tagName)));   // 与 findContainer 一致：跳过页面级主体容器
+      return [...d.querySelectorAll('#preview p')].filter(x=>!x.closest('table')).find(x=>{
+        let e=x.parentElement, bad=false;
+        while(e&&e!==rootSec&&e!==d.getElementById('preview')){
+          if(!mains.has(e)){
+            const bg=e.style.backgroundColor;
+            const hasBg=!!bg&&bg!=='transparent'&&bg!=='rgba(0, 0, 0, 0)';
+            const hasBorder=/\d+px\s+solid/.test((e.style.border||'')+(e.style.borderLeft||''));
+            if(hasBg||hasBorder){ bad=true; break; }
+          }
+          e=e.parentElement;
+        }
+        return !bad;
+      });
+    };
     const pick=(kw)=>{ const a=[...d.querySelectorAll('#preview section')]
       .filter(s=>(s.textContent||'').trim().startsWith(kw)); return a[a.length-1]; };
 
@@ -81,37 +99,62 @@ ifr.addEventListener('load',()=>{
     w.setThemeColor('#0F4C81');
     ok('主题色 UI 同步', $('themeVal').textContent.toUpperCase()==='#0F4C81');
 
-    // ---------- 4. 卡片 vs 色块 ----------
-    const bq=q('blockquote'); selectIn(bq);
+    // ---------- 4. 卡片 vs 色块（含「插入时包裹选中文字」）----------
+    const rootSec0=d.querySelector('#preview > section');
+    const bq=q('blockquote');
+    selectIn(bq);
     ok('引用块识别为卡片', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
-    selectIn(q('h2'));
+
+    // 选中一整段文字 → 插入色块：文字应被包进色块
+    const psAll2=[...d.querySelectorAll('#preview p')].filter(x=>!x.closest('table'));
+    const pWrap=psAll2[psAll2.length-1];
+    const wrapText=pWrap.textContent.trim().slice(0,8);
+    selectIn(pWrap);
     w.insertColorBlock();
-    const block=pick('色块：');
-    ok('插入色块成功且无边框', !!block&&!block.style.getPropertyValue('border')&&!block.style.getPropertyValue('border-left'));
-    selectIn(block);
-    ok('色块识别为 block', (w.findContainer(sel().getRangeAt(0))||{}).kind==='block');
+    const wrapBlock=[...d.querySelectorAll('#preview section')].find(s=>s!==rootSec0&&s.style.backgroundColor
+      &&!/\d+px\s+solid/.test(s.style.border||'')&&s.textContent.includes(wrapText));
+    ok('插入色块：选中的文字被包进色块', !!wrapBlock, wrapBlock?('内含「'+wrapText+'」'):'未找到包裹容器');
+    ok('色块无边框（纯底色盒）', !!wrapBlock&&!wrapBlock.style.getPropertyValue('border'), wrapBlock&&(wrapBlock.getAttribute('style')||'').slice(0,52));
+    selectIn(wrapBlock);
+    ok('色块识别为 色块（非卡片）', (w.findContainer(sel().getRangeAt(0))||{}).kind==='block');
+
+    // 选中另一段 → 插入卡片
+    const pWrap2=psAll2[0];
+    const wrapText2=pWrap2.textContent.trim().slice(0,8);
+    selectIn(pWrap2);
     w.insertCard();
-    const card2=pick('卡片：');
-    ok('插入卡片成功且有边框', !!card2&&/^\s*1px solid/.test(card2.style.getPropertyValue('border')||''));
-    selectIn(card2);
-    ok('卡片识别为 card', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
-    const plainP=[...d.querySelectorAll('#preview > section > div > p')].pop();
-    selectIn(plainP);
+    const wrapCard=[...d.querySelectorAll('#preview section')].find(s=>/^\s*\d+px solid/.test(s.style.border||'')
+      &&s.textContent.includes(wrapText2));
+    ok('插入卡片：选中的文字被包进卡片', !!wrapCard, wrapCard?('内含「'+wrapText2+'」'):'未找到');
+    selectIn(wrapCard);
+    ok('卡片识别为 wrapCard', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
+
+    // 未选中文字（折叠光标）→ 插入占位符容器
+    const pC=d.querySelectorAll('#preview p')[0];
+    const rc=d.createRange(); rc.setStart(pC.firstChild||pC,0); rc.collapse(true);
+    sel().removeAllRanges(); sel().addRange(rc);
+    w.insertCard();
+    const phCard=[...d.querySelectorAll('#preview section')].filter(s=>/^\s*\d+px solid/.test(s.style.border||'')).pop();
+    ok('未选中文字时插入占位卡片', !!phCard&&/卡片：/.test(phCard.textContent||''), phCard&&(phCard.textContent||'').slice(0,12));
+
+    // 普通段落不误判
+    const plainP=plainParagraph();
+    const rp=d.createRange(); rp.setStart(plainP.firstChild||plainP,0); rp.collapse(true);
+    sel().removeAllRanges(); sel().addRange(rp);
     ok('普通段落不误判（返回 null）', w.findContainer(sel().getRangeAt(0))===null);
 
-    // ---------- 5. 一键清除色块 ----------
-    const beforeCount=[...d.querySelectorAll('#preview [style*="background-color"]')].length;
-    w.clearAllColorBlocks();
-    const afterList=[...d.querySelectorAll('#preview [style*="background-color"]')].map(e=>e.tagName+':'+e.style.backgroundColor);
-    ok('一键清除色块：色块底色被清除', !block.style.getPropertyValue('background-color'), block.getAttribute('style')||'(空)');
-    ok('一键清除色块：卡片保留', !!card2.style.getPropertyValue('border')||!!card2.style.getPropertyValue('background-color'));
-    ok('一键清除色块：整篇底色保留', !!d.querySelector('#preview > section').style.getPropertyValue('background-color'));
-    w.undo();
-    // 撤销会整体替换 DOM，需重新查询元素
-    const blockAfter=pick('色块：');
-    ok('一键清除色块可撤销', !!blockAfter&&!!blockAfter.style.getPropertyValue('background-color'),
-       blockAfter&&(blockAfter.getAttribute('style')||'(空)'));
-    w.redo();
+    // ---------- 4c. 清除「当前」色块（点哪个清哪个）----------
+    const bgBefore2=wrapBlock.style.backgroundColor;
+    selectIn(wrapBlock);
+    const othersBefore=[...d.querySelectorAll('#preview [style*="background-color"]')].filter(e=>e!==wrapBlock).length;
+    w.clearBlockAtCaret();
+    ok('清除当前色块：只清光标所在那一个', !wrapBlock.style.backgroundColor, bgBefore2+' → '+(wrapBlock.style.backgroundColor||'(已清除)'));
+    ok('清除当前色块：其它底色不受影响',
+       [...d.querySelectorAll('#preview [style*="background-color"]')].filter(e=>e!==wrapBlock).length===othersBefore);
+    ok('状态提示说明只清一个', /只清这一个/.test($('status').textContent), $('status').textContent.slice(0,38));
+
+    // ---------- 5. 全量清理按钮已移除 ----------
+    ok('「一键清除全部色块」按钮已移除（改为只清当前）', !$('clearBlocks'));
 
     // ---------- 6. 标题样式 ----------
     ok('标题样式默认=主题色文字', $('headStyleSel').value==='color');
@@ -121,7 +164,8 @@ ifr.addEventListener('load',()=>{
     ok('标题样式：切回主题色文字', /250, 81, 81|15, 76, 129|0, 152, 116/.test(h2el.style.color||''), h2el.style.color);
 
     // ---------- 7. 段落级 / 扁平化 / 菜单 ----------
-    const p=q('p'); selectIn(p);
+    const p=plainParagraph();
+    selectIn(p);
     w.applyToBlocks('background-color','#eeeeee','t');
     ok('段落底色可应用', p.style.getPropertyValue('background-color')==='rgb(238, 238, 238)');
     w.applyToBlocks('background-color','','t');
@@ -139,7 +183,7 @@ ifr.addEventListener('load',()=>{
     ok('6 个 Word 式菜单', menus.length===6, menus.map(m=>m.querySelector('.menu-btn').textContent).join('/'));
     const styleMenu=menus.find(m=>m.dataset.menu==='style');
     ok('样式面板含 11 个主题色按钮', styleMenu.querySelectorAll('.theme-btn').length===11);
-    ok('样式面板含「一键清除全部色块」按钮', !!$('clearBlocks')&&styleMenu.contains($('clearBlocks')));
+    ok('样式面板含「清除这个色块的底色」按钮', !!$('blockBgNone')&&styleMenu.contains($('blockBgNone')));
     ok('菜单打开/互斥/Esc 关闭', (()=>{ const fmt=menus.find(m=>m.dataset.menu==='format');
       styleMenu.querySelector('.menu-btn').click(); const a1=styleMenu.classList.contains('open');
       fmt.querySelector('.menu-btn').click(); const a2=fmt.classList.contains('open')&&!styleMenu.classList.contains('open');

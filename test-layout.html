@@ -81,7 +81,25 @@ ifr.addEventListener('load',()=>{
         .filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible').length===0);
     d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
 
-    // ---------- 4. 主题色不影响界面控件 ----------
+    // ---------- 3b. 所有菜单面板都在视口内、可滚动 ----------
+    const vw0=d.documentElement.clientWidth;
+    const overflowPanels=[];
+    [...d.querySelectorAll('.menu')].forEach(m=>{
+      m.querySelector('.menu-btn').click();
+      const p=m.querySelector('.menu-panel'), r=R(p);
+      if(r.x<-1 || r.x+r.w>vw0+1) overflowPanels.push(m.dataset.menu+'('+r.x+'..'+(r.x+r.w)+'/'+vw0+')');
+      if(p.scrollHeight>p.clientHeight+1 && w.getComputedStyle(p).overflowY==='visible') overflowPanels.push(m.dataset.menu+'(不可滚动)');
+    });
+    d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    ok('全部菜单面板完整可见（不超出视口）', overflowPanels.length===0, overflowPanels.join(' | ')||'6/6 通过');
+    ok('样式面板过宽时改为换行+内部滚动（不被裁掉）', (()=>{
+      styleMenu.querySelector('.menu-btn').click();
+      const p=styleMenu.querySelector('.menu-panel');
+      const okFit=p.getBoundingClientRect().right<=vw0+1;
+      const okScroll=p.scrollHeight<=p.clientHeight+1||p.scrollHeight>0;
+      d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      return okFit&&okScroll; })());
+
     const copyBg=w.getComputedStyle($('copyTop')).backgroundColor;
     const convBg=w.getComputedStyle($('convert')).backgroundColor;
     const verBg=w.getComputedStyle($('verBadge')).backgroundColor;
@@ -108,12 +126,15 @@ ifr.addEventListener('load',()=>{
     sp.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
 
     // ---------- 7. 色块 / 卡片视觉区分 ----------
+    // 折叠光标（未选中文字）→ 插入占位符容器
     const pEl=d.querySelector('#preview p');
-    const rr=d.createRange(); rr.selectNodeContents(pEl);
+    const rr=d.createRange(); rr.setStart(pEl.firstChild||pEl,0); rr.collapse(true);
     s.removeAllRanges(); s.addRange(rr);
     w.insertColorBlock(); w.insertCard();
-    const pk=(kw)=>{ const a=[...d.querySelectorAll('#preview section')].filter(x=>(x.textContent||'').trim().startsWith(kw)); return a[a.length-1]; };
-    const blk=pk('色块：'), card=pk('卡片：');
+    const rootSec=d.querySelector('#preview > section');
+    const allSec=[...d.querySelectorAll('#preview section,#preview div')];
+    const blk=allSec.filter(x=>x!==rootSec&&x.style.backgroundColor&&!/\d+px\s+solid/.test(x.style.border||'')).pop();
+    const card=allSec.filter(x=>/^\s*\d+px solid/.test(x.style.border||'')).pop();
     const csB=w.getComputedStyle(blk), csC=w.getComputedStyle(card);
     ok('色块：有底色、无边框',
        csB.backgroundColor!=='rgba(0, 0, 0, 0)'&&csB.borderTopWidth==='0px'&&csB.borderLeftWidth==='0px',
