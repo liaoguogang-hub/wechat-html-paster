@@ -91,7 +91,12 @@ ifr.addEventListener('load',()=>{
     w.setThemeColor('#FA5151');
     ok('主题色 → 小节标题文字', /250, 81, 81/.test(h2el.style.color||''), h2el.style.color);
     ok('主题色 → 卡片边框线条', /250, 81, 81/.test(card?card.style.borderLeft:''), card&&card.style.borderLeft);
-    ok('主题色 → 卡片浅色底纹（保留 alpha/观感）', /250, 81, 81/.test(card?card.style.backgroundColor:''), card&&card.style.backgroundColor);
+    // 底色现在输出为不透明浅色调（微信对 rgba 背景过滤严），断言：变了 + 是主题色的浅色调
+    const cardBgNow=(card&&card.style.backgroundColor)||'';
+    const bgM=cardBgNow.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    ok('主题色 → 卡片浅色底纹跟着变（浅色调）',
+       cardBgNow!==cardBgBefore&&!!bgM&&+bgM[1]>=+bgM[2]&&+bgM[1]>=+bgM[3]&&+bgM[1]>235,
+       cardBgBefore+' → '+cardBgNow);
     ok('主题色 → 表格表头底色', /250, 81, 81/.test(firstCell?firstCell.style.backgroundColor:''), firstCell&&firstCell.style.backgroundColor);
     ok('主题色 → 段首重要句', /250, 81, 81/.test(lead.style.color||''), lead.style.color);
     ok('正文段落颜色【不】改变', w.getComputedStyle(bodyP).color===bodyColorBefore, bodyColorBefore+' → '+w.getComputedStyle(bodyP).color);
@@ -326,11 +331,17 @@ ifr.addEventListener('load',()=>{
     const outerSec=[...d.querySelectorAll('#preview section')].filter(s=>s.style.backgroundColor
       &&!/\d+px\s+solid/.test(s.style.border||'')&&s!==rootSec0).pop();
     if(outerSec){
-      ok('容器为「背景容器 + 文本容器」双层结构',
-         outerSec.children.length===1&&outerSec.firstElementChild.tagName==='SECTION',
-         outerSec.tagName+' > '+(outerSec.firstElementChild||{}).tagName);
-      ok('外层只放背景/内边距，不含文字样式',
-         !outerSec.style.fontSize&&!outerSec.style.color, (outerSec.getAttribute('style')||'').slice(0,56));
+      // 单层结构：背景 + 文字样式写在同一 section（多包一层会被微信"精简嵌套"吃掉背景层）
+      ok('容器为单层结构（背景与文字样式同一 section）',
+         /background-color/.test(outerSec.getAttribute('style')||'')&&
+         /font-size/.test(outerSec.getAttribute('style')||''),
+         (outerSec.getAttribute('style')||'').slice(0,64));
+      ok('容器内不再嵌套 section / p',
+         outerSec.querySelector('section')===null&&outerSec.querySelector('p')===null);
+      ok('背景色为不透明 rgb（无 rgba）',
+         /background-color:\s*rgb\(/.test(outerSec.getAttribute('style')||'')&&
+         !/background-color:\s*rgba/.test(outerSec.getAttribute('style')||''),
+         (outerSec.getAttribute('style')||'').match(/background-color:\s*[^;]+/)+'');
     } else { ok('容器双层结构夹具可用', false, '未找到带底色的容器'); }
     // 插入 → 立刻清除底色 → 仍可删除（此前清掉底色后就认不出容器了）
     const par36=plainParagraph();
