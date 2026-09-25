@@ -145,7 +145,54 @@ msedge --headless=new --disable-gpu --allow-file-access-from-files \
 # 同上分别跑 test-layout.html / test-wechat-spec.html
 ```
 
-结果以 `PASS/FAIL` 打在 `<pre id="results">` 中（`--dump-dom` 直接可读）。当前**176 项断言全绿**（功能 120 + 布局 32 + 合规 24）。
+结果以 `PASS/FAIL` 打在 `<pre id="results">` 中（`--dump-dom` 直接可读）。当前**189 项断言全绿**（功能 126 + 布局 32 + 合规 31）。
+
+## 粘贴时提示「行高小于字体大小」（2.3.2 误报）
+
+症状：粘进公众号编辑器后弹出《内容结构检测》，报几十个段落「行高小于字体大小，且存在多行文本，
+可能导致文字重叠（实测）」，参考文档 `#2.3.2 line-height-overlapping`。手机预览里排版其实是好的。
+
+**这是官方检测器的误报**，根因在 `cli/engine/layout.ts`：
+
+```js
+// ① 只挑「块元素里有直接文本子节点」的节点来测
+if (![...node.childNodes].some(c => c.nodeType === TEXT_NODE && c.textContent.trim())) return;
+// ② 用 range 的「片段数」当行数
+const rects = [...range.getClientRects()].filter(r => r.height > 0);
+const lineCount = rects.length;                          // ← 不是视觉行数
+// ③ 平均行高 < 0.95×字号 即判叠字
+overlapping = lineCount >= 2 && (range 内容高 / lineCount) < fontSize * 0.95;
+```
+
+`range.getClientRects()` 按「行内盒 × 行片段」返回矩形，所以**段落里每多一个 `<strong>`/`<span>`，
+每行就多出若干"片段"**，而内容高只按真实行数增长 → 平均行高被腰斩。实测（`16px/29px` = 1.8 倍行高）：
+
+| 段落形态 | range 片段数 | 判定 |
+|---|---|---|
+| 纯文本 3 行 | 3 | ✅ 通过 |
+| **中间一个 `<strong>`** | **5~6** | ❌ **报叠字** |
+| 每行若干 `<span>` | 13 | ❌ 报叠字 |
+
+### 本工具怎么处理
+把「块元素的**直接文本**」包进带样式的 `<span>`（span 带上与块相同的 `font-size/line-height/color/font-weight`，
+值相同不影响排版，只是为了让微信 ProseMirror 保留它）。于是官方 fallback 路径不再量这些块，
+改由 rules 路径按「每个行内片段自身」测量 —— 片段自身的 rect 数就是真实行数，天然合格。
+
+实测（用户样例推文，585px 沙箱）：
+
+```
+修复前  官方 fallback 告警 35 处
+修复后  官方 fallback 告警  0 处
+逐块高度序列（p/section/li/td/h*）：完全一致 —— 版式一个字没变
+输出体积：33475 → 41920 字节（+25%，125 个合规 span）
+```
+
+发之前可以点**帮助 →「结构检测预演」**：在本地用同一算法跑两条路径（fallback / rules）自检，
+发现问题会自动修一次并复检，不用等公众号报警。
+
+> 教训：移植官方校验器时，测量 API 必须是 `range.getClientRects()`（内容矩形），
+> 不能用 `el.getClientRects()`（元素矩形，块元素恒为 1）—— 后者会给出假绿灯。
+> 合规套件现在按官方源码逐字移植，并含「段落中间一个 `<strong>`、行高 1.8 倍」这个真凶 fixture。
 
 ## 粘到公众号后正文变窄（左右留白叠加）
 

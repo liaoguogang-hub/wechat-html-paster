@@ -1,7 +1,78 @@
 # 更新日志
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号采用语义化版本（SemVer）。
-Git 标签与本文一一对应：`git tag` → `v1.0.0`、`v2.0.0`、`v3.0.0`、`v3.1.0`、`v3.2.0`、`v3.3.0`、`v3.4.0`、`v3.5.0`、`v3.6.0`、`v3.7.0`、`v3.8.0`、`v3.9.0`、`v3.9.1`、`v3.10.0`、`v3.11.0`、`v3.12.0`、`v3.13.0`、`v3.13.1`。
+Git 标签与本文一一对应：`git tag` → `v1.0.0`、`v2.0.0`、`v3.0.0`、`v3.1.0`、`v3.2.0`、`v3.3.0`、`v3.4.0`、`v3.5.0`、`v3.6.0`、`v3.7.0`、`v3.8.0`、`v3.9.0`、`v3.9.1`、`v3.10.0`、`v3.11.0`、`v3.12.0`、`v3.13.0`、`v3.13.1`、`v3.14.0`。
+
+## [3.14.0] - 2026-09-28
+
+根治粘贴时公众号《内容结构检测》2.3.2 报「行高小于字体大小，且存在多行文本（实测）」——用户这篇推文被报 **48 段**。
+
+### 用户反馈
+> 「问题仍然是内容检测。粘贴时候公众号编辑器有个手机预览，页边距是对的，但是报警后，继续插入就有问题了。」
+
+（顺带确认：v3.13.1 的版心模拟是对的，页边距没问题，**真正的拦路虎是结构检测**。）
+
+### 根因：官方检测把「range 片段数」当行数，段落里的行内元素会让它翻倍
+
+把官方引擎 `cli/engine/layout.ts` 抓下来逐字读，关键就三段：
+
+```js
+// ① collectLineHeightFallback() 只挑「块元素里存在直接文本子节点」的节点来测
+const hasDirectText = [...node.childNodes].some(c => c.nodeType === TEXT_NODE && c.textContent.trim());
+if (!hasDirectText) return;
+
+// ② detectLineHeightOverlap() 用 range 的**片段数**当行数
+const rects = [...range.getClientRects()].filter(r => r.height > 0);
+const lineCount = rects.length;                                  // ← 不是视觉行数！
+const contentHeight = range.getBoundingClientRect().height;
+
+// ③ 判定
+overlapping = lineCount >= 2 && (contentHeight / lineCount) < fontSize * 0.95;
+```
+
+`range.getClientRects()` 是按「行内盒 × 行片段」返回矩形的：段落里每多一个 `<strong>`/`<span>`，
+每行就多出若干片段，而 `contentHeight` 只按真实行数增长 —— 平均行高被腰斩，**行高 1.8 倍也照样判「叠字」**。
+
+585px 沙箱实测（`font-size:16px; line-height:29px`，即 1.8 倍，肉眼绝不可能重叠）：
+
+```
+纯文本 3 行           片段=3    平均 27.3  阈值 15.2   ✅ 通过
+行内 1 个 <strong>    片段=5~6  平均 13.7  阈值 15.2   ❌ 报叠字
+行内若干 <span>       片段=13   平均  6.3  阈值 15.2   ❌ 报叠字
+段首 <strong>         片段=5    平均 16.4  阈值 15.2   ✅ 勉强通过
+```
+
+在用户样例推文（33KB）上复现：**官方算法报 34 处**，全部是「段落里有一个 `<strong>`/`<span>`」的正常段落。
+
+### 为什么我上一版没发现（这是我的流程错误）
+`test-wechat-spec.html` 里我移植检测时用的是 `el.getClientRects()`（元素矩形）**而不是官方的
+`range.getClientRects()`**（内容矩形）——元素矩形对块元素恒为 1 个，于是本地永远「零违规」，
+微信那边却报 48 段。**移植官方校验器时我把测量 API 搞错了，测试给了我假绿灯。**
+
+### 修复
+- **结构层消除（版式一字不动）**：把「块元素的直接文本」包进带样式的 `<span>`
+  （span 带块级的 `font-size/line-height/color/font-weight`，值相同故不影响排版，只为让微信 ProseMirror 保留它）。
+  这样官方 fallback 路径就不再量这些块；改由 rules 路径按「每个行内片段自身」测量，
+  片段自身的 rect 数就是真实行数，天然合格。
+  在 `convert()` 与 `copyRich()/downloadHtml()` 的归一链里各跑一次（幂等，不会反复加 span）。
+- **修正测试移植**：`test-wechat-spec.html` 按官方源码逐字重写（Range API + 两条路径：fallback / rules），
+  并加入「段落中间一个 `<strong>`、行高 1.8 倍」这个真凶 fixture。用 v3.13.1 跑该 fixture **确实是红的**
+  （`P 片段=5 平均=9.02 < 13.77`），v3.14.0 为绿 —— 回归哨兵有效。
+- **新增「结构检测预演」**（帮助菜单）:在本地用同一算法自检，检测到问题会自动修一次并复检，
+  发之前就能确认，不用等公众号报警。
+
+### 实测（用户样例推文，585px 沙箱，改前 vs 改后）
+```
+v3.13.1  官方 fallback 告警 35 处
+v3.14.0  官方 fallback 告警  0 处
+逐块高度序列（p/section/li/td/h*）：完全一致 —— 版式未变
+输出体积：33475 → 41920 字节（+25%，来自 125 个用于合规的 span）
+```
+
+### 测试
+合规套件 24 → **31** 项（两条官方路径 × 3 个 fixture + 「块不再有直接文本」断言），
+功能套件 120 → **126** 项（直接文本清零、状态栏报告、幂等、预演 0 处、按钮存在）。
+合计 **126 功能 + 32 布局 + 31 合规 = 189 项全绿**。归档 `versions/v3.14.0.html`。
 
 ## [3.13.1] - 2026-09-28
 
