@@ -4,7 +4,7 @@
 
 把任意 HTML 文章（含 `<style>`、CSS 变量、`@media`）转换成**全内联样式**的公众号兼容 HTML，并提供 Word 式菜单排版工具条，改完一键复制进 `mp.weixin.qq.com`。
 
-**当前版本：v3.9.0** · 版本历史见 [CHANGELOG.md](./CHANGELOG.md) · 研究与设计见 [docs/PLAN-v3.0.0.md](./docs/PLAN-v3.0.0.md)
+**当前版本：v3.9.1** · 版本历史见 [CHANGELOG.md](./CHANGELOG.md) · 研究与设计见 [docs/PLAN-v3.0.0.md](./docs/PLAN-v3.0.0.md)
 
 ---
 
@@ -112,7 +112,7 @@ nihaotk 用 `:root{--md-primary-color}` + 变量驱动的主题样式表实现�
 
 ## 快速使用
 
-1. 浏览器打开 `index.html`（Chrome / Edge）。
+1. 浏览器打开 `wechat-html-paster.html`（Chrome / Edge）。
 2. 「文件 → 载入样例」或直接粘贴 HTML → 「转换并适配公众号」`Ctrl+↵`。
 3. 右侧预览**选中文字**，用「格式 / 样式」菜单改字号、颜色、行距、底色、边框；「插入」加色块/卡片；「样式 → 主题色」一键换整篇配色。
 4. 「复制」`Ctrl+Shift+C` → 去公众号后台 `Ctrl+V`。
@@ -121,7 +121,7 @@ nihaotk 用 `:root{--md-primary-color}` + 变量驱动的主题样式表实现�
 
 ```
 wechat-html-paster/
-├── index.html              # v3.0.0 主程序（单文件，直接打开）
+├── wechat-html-paster.html              # v3.0.0 主程序（单文件，直接打开）
 ├── README.md               # 本文件
 ├── CHANGELOG.md            # 版本历史
 ├── docs/PLAN-v3.0.0.md     # v3 调研结论 + 设计（nihaotk 实测 / 微信规则源码）
@@ -180,4 +180,4 @@ git log --oneline --decorate    # v1.0.0 / v2.0.0 / v3.0.0
 git tag                         # 标签即版本
 ```
 
-发版流程：改 `index.html` → 更新 `CHANGELOG.md` → 跑三套测试 → `cp index.html versions/vX.Y.Z.html`（可选存档）→ 提交 → `git tag vX.Y.Z`。
+发版流程：改 `wechat-html-paster.html` → 更新 `CHANGELOG.md` → 跑三套测试 → `cp wechat-html-paster.html versions/vX.Y.Z.html`（可选存档）→ 提交 → `git tag vX.Y.Z`。
