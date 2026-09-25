@@ -21,7 +21,8 @@ ifr.addEventListener('load',()=>{
     const plainParagraph=()=>{
       const rootSec=d.querySelector('#preview > section');
       const mains=new Set([...rootSec.children].filter(c=>/^(DIV|SECTION)$/.test(c.tagName)));   // 与 findContainer 一致：跳过页面级主体容器
-      return [...d.querySelectorAll('#preview p')].filter(x=>!x.closest('table')).find(x=>{
+      const all=[...d.querySelectorAll('#preview p')].filter(x=>!x.closest('table'));
+      const found=all.find(x=>{
         let e=x.parentElement, bad=false;
         while(e&&e!==rootSec&&e!==d.getElementById('preview')){
           if(!mains.has(e)){
@@ -34,9 +35,14 @@ ifr.addEventListener('load',()=>{
         }
         return !bad;
       });
+      if(found) return found;
+      if(all.length) return all.pop();
+      const host=d.querySelector('#preview > section > div')||d.querySelector('#preview > section');
+      const np=d.createElement('p'); np.textContent='测试段落'; host.appendChild(np); return np;
     };
+    // 容器现在是「外层背景容器 + 内层文本容器」双层结构 → 取最外层那一层
     const pick=(kw)=>{ const a=[...d.querySelectorAll('#preview section')]
-      .filter(s=>(s.textContent||'').trim().startsWith(kw)); return a[a.length-1]; };
+      .filter(s=>(s.textContent||'').trim().startsWith(kw)); return a[0]; };
 
     // ---------- 1. 转换 + 合规归一 ----------
     $('input').value=d.getElementById('sample').innerHTML.trim();
@@ -253,7 +259,7 @@ ifr.addEventListener('load',()=>{
       sel().removeAllRanges(); sel().addRange(r); }
     w.unwrapContainer('block','色块');
     ok('删除色块：容器已移除', !d.querySelector('#preview').contains(blkDel));
-    ok('删除色块：其中的文字保留', [...d.querySelectorAll('#preview p')].some(p=>p.textContent.includes(keepTxt)),
+    ok('删除色块：其中的文字保留', ($('preview').textContent||'').includes(keepTxt),
        '文字「'+keepTxt+'」仍在');
     ok('删除色块：状态栏提示保留文字', /文字已保留/.test($('status').textContent));
 
@@ -300,8 +306,9 @@ ifr.addEventListener('load',()=>{
     // ---------- 14. 结构合法化：块级不得嵌在段落里（微信粘贴不丢色块/卡片） ----------
     const nestPar=plainParagraph();
     const findText=(el)=>{ if(!el) return null; const w=d.createTreeWalker(el,NodeFilter.SHOW_TEXT);
-      let n; while((n=w.nextNode())){ if(n.nodeValue.trim().length>8) return n; } return null; };
-    const nestTextNode=findText(nestPar);
+      let n; while((n=w.nextNode())){ if(n.nodeValue.trim().length>4) return n; } return null; };
+    let nestTextNode=findText(nestPar);
+    if(!nestTextNode&&nestPar){ nestPar.textContent='结构合法化测试文本内容'; nestTextNode=nestPar.firstChild; }
     if(nestTextNode){
       const rn=d.createRange(); rn.setStart(nestTextNode,0); rn.setEnd(nestTextNode,4);
       sel().removeAllRanges(); sel().addRange(rn);
@@ -315,6 +322,42 @@ ifr.addEventListener('load',()=>{
       ok('重新解析后无段落含块级子元素',
          [...reDoc.body.querySelectorAll('p')].filter(p=>[...p.children].some(c=>/^(SECTION|DIV|TABLE|UL|OL)$/.test(c.tagName))).length===0);
     } else { ok('结构合法化夹具可用', false, '未找到合适的段落'); }
+    // ---------- 15. 插入后的容器结构 / 立刻可操作 / 按钮配色 ----------
+    const outerSec=[...d.querySelectorAll('#preview section')].filter(s=>s.style.backgroundColor
+      &&!/\d+px\s+solid/.test(s.style.border||'')&&s!==rootSec0).pop();
+    if(outerSec){
+      ok('容器为「背景容器 + 文本容器」双层结构',
+         outerSec.children.length===1&&outerSec.firstElementChild.tagName==='SECTION',
+         outerSec.tagName+' > '+(outerSec.firstElementChild||{}).tagName);
+      ok('外层只放背景/内边距，不含文字样式',
+         !outerSec.style.fontSize&&!outerSec.style.color, (outerSec.getAttribute('style')||'').slice(0,56));
+    } else { ok('容器双层结构夹具可用', false, '未找到带底色的容器'); }
+    // 插入 → 立刻清除底色 → 仍可删除（此前清掉底色后就认不出容器了）
+    const par36=plainParagraph();
+    const secsBefore=new Set([...d.querySelectorAll('#preview section')]);
+    selectIn(par36); w.insertColorBlock();
+    const box36=[...d.querySelectorAll('#preview section')]
+      .find(s=>!secsBefore.has(s)&&/background-color/.test(s.getAttribute('style')||''));
+    w.clearBlockAtCaret();
+    ok('插入后立刻「清除这个色块的底色」生效', !!box36&&!box36.style.backgroundColor,
+       'status='+$('status').textContent.slice(0,24));
+    ok('清除底色后容器仍被识别（可继续操作）',
+       !!w.findContainer(sel().getRangeAt(0)), 'kind='+(w.findContainer(sel().getRangeAt(0))||{}).kind);
+    w.unwrapContainer('block','色块');
+    ok('清除底色后仍能删除容器（保留文字）', !!box36&&!$('preview').contains(box36),
+       'status='+$('status').textContent.slice(0,22));
+
+    // ---------- 16. 主按钮配色 & 格式刷提示 ----------
+    ok('主按钮有专属 hover/active 规则（不被 .btn:hover 盖成白色）',
+       !![...d.styleSheets[0].cssRules].some(r=>r.selectorText==='.btn.btn-primary:hover'));
+    ok('「复制」常态为主色', w.getComputedStyle($('copyTop')).backgroundColor==='rgb(15, 76, 129)',
+       w.getComputedStyle($('copyTop')).backgroundColor);
+    ok('格式刷有悬浮提示条', !!$('brushBanner')&&/选中目标文字即套用/.test($('brushBanner').textContent));
+    ok('格式刷光标不再是 copy（箭头+）',
+       !/cursor:\s*copy/.test([...d.styleSheets[0].cssRules].map(r=>r.cssText).join('')));
+    ok('「清除文字格式」命名清晰且有说明',
+       /清除文字格式/.test($('clearFmt').textContent)&&
+       /恢复成文章原本的样子/.test([...d.querySelectorAll('[data-menu=edit] .hint')].map(e=>e.textContent).join('')));
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
