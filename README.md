@@ -4,7 +4,7 @@
 
 把任意 HTML 文章（含 `<style>`、CSS 变量、`@media`）转换成**全内联样式**的公众号兼容 HTML，并提供 Word 式菜单排版工具条，改完一键复制进 `mp.weixin.qq.com`。
 
-**当前版本：v3.10.0** · 版本历史见 [CHANGELOG.md](./CHANGELOG.md) · 研究与设计见 [docs/PLAN-v3.0.0.md](./docs/PLAN-v3.0.0.md)
+**当前版本：v3.11.0** · 版本历史见 [CHANGELOG.md](./CHANGELOG.md) · 研究与设计见 [docs/PLAN-v3.0.0.md](./docs/PLAN-v3.0.0.md)
 
 ---
 
@@ -83,8 +83,8 @@ nihaotk 用 `:root{--md-primary-color}` + 变量驱动的主题样式表实现�
 |---|---|---|
 | 形态 | 底色 + **同色系细边**（`background + 1px 同色系 border + padding + radius`） | 白色/浅底色 + **主题色边框**（`border(1~4px)`） |
 | 插入 | 插入 → 色块 | 插入 → 卡片 / 引用卡片 |
-| 编辑 | 样式 → 色块（底色 / **边框：细边·无边框** / 清除底色 / 删除色块（保留文字）） | 样式 → 卡片（背景 / 边框色 / 位置 / 宽度 / 移除） |
-| 自动识别 | 有底色、无可见边框 | 有可见边框（含 `blockquote` 等） |
+| 编辑 | 样式 → 色块（底色 / **边框：颜色·位置（全/左/无）·宽度** / 清除底色 / 删除色块（保留文字）） | 样式 → 卡片（背景 / 边框色 / 位置 / 宽度 / 移除） |
+| 自动识别 | 有底色/渐变底/只有圆角或内边距（含段落级底色、行内高亮） | 有可见边框（含 `blockquote`、`td` 底色等） |
 | 状态栏 | 显示「目标：色块」 | 显示「目标：卡片」 |
 
 普通段落（如主体容器里的 `<p>`）识别为「段落」，不会被误判成卡片而错改主体容器。
@@ -144,7 +144,7 @@ msedge --headless=new --disable-gpu --allow-file-access-from-files \
 # 同上分别跑 test-layout.html / test-wechat-spec.html
 ```
 
-结果以 `PASS/FAIL` 打在 `<pre id="results">` 中（`--dump-dom` 直接可读）。当前**142 项断言全绿**（功能 86 + 布局 32 + 合规 24）。
+结果以 `PASS/FAIL` 打在 `<pre id="results">` 中（`--dump-dom` 直接可读）。当前**149 项断言全绿**（功能 93 + 布局 32 + 合规 24）。
 
 ## 转换管线与样式隔离
 

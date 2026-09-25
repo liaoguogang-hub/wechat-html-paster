@@ -420,6 +420,35 @@ ifr.addEventListener('load',()=>{
     const box18=[...doc18.body.querySelectorAll('section')].filter(s=>/background-color/.test(s.getAttribute('style')||'')
       &&/border-radius/.test(s.getAttribute('style')||'')&&/padding/.test(s.getAttribute('style')||''));
     ok('色块/卡片在输出中保持 section + 背景 + 圆角 + 内边距', box18.length>0, box18.length+' 个');
+    // ---------- 19. 回归：各类"像色块/卡片"的形态都要认得出、能操作 ----------
+    const shapeHost=d.querySelector('#preview > section') ;
+    const mk=(style,text,tag)=>{ const el=d.createElement(tag||'section');
+      el.setAttribute('style',style); el.textContent=text; shapeHost.appendChild(el); return el; };
+    const probeBox=(el,name,expectKind)=>{
+      const rp=d.createRange(); rp.setStart(el.firstChild||el,0); rp.collapse(true);
+      sel().removeAllRanges(); sel().addRange(rp);
+      const f=w.findContainer(sel().getRangeAt(0));
+      ok('容器识别：'+name, !!f&&(!expectKind||f.kind===expectKind), f?('kind='+f.kind):'❌ 不认');
+      return f;
+    };
+    probeBox(mk('color:#333;font-size:15px;background-color:rgb(253,230,138);padding:8px','段落级底色'),'段落级底色（P）','block');
+    probeBox(mk('color:#333;font-size:15px;background-image:linear-gradient(90deg,rgb(232,240,254),rgb(210,227,252));padding:12px;border-radius:8px','渐变底色'),'渐变底色容器','block');
+    probeBox(mk('color:#333;font-size:15px;padding:12px;border-radius:8px','只有阴影/圆角 + 内边距'),'只有圆角+内边距的容器','block');
+    probeBox(mk('color:#333;font-size:15px;background:#fff;border:1px solid #0A5E44;padding:10px','带边框容器'),'带边框容器','card');
+    const spanHost=mk('color:#333;font-size:15px','行内高亮片段','p');
+    const hl=d.createElement('span'); hl.setAttribute('style','background-color:rgb(209,250,229)');
+    hl.textContent='高亮'; spanHost.appendChild(hl);
+    probeBox(hl,'行内高亮（span 底色）','block');
+    ok('「整篇/主体容器」仍不会被误判成卡片（普通段落返回 null）',
+       (()=>{ const p0=plainParagraph(); const rp=d.createRange();
+         rp.setStart(p0.firstChild||p0,0); rp.collapse(true);
+         sel().removeAllRanges(); sel().addRange(rp);
+         return w.findContainer(sel().getRangeAt(0))===null||w.findContainer(sel().getRangeAt(0)).el!==shapeHost; })(),
+       '普通段落不会指到根节点');
+    // 色块组具备与卡片同级的边框能力
+    ok('色块组含边框颜色/位置/宽度三个控件',
+       !!$('blockBorderColor')&&!!$('blockBorderSel')&&!!$('blockBorderWidth')&&
+       [...$('blockBorderSel').options].map(o=>o.value).join('/')==='all/left/none');
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
