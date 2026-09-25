@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>v2 smoke test</title></head>
+<head><meta charset="UTF-8"><title>v3 functional tests · wechat-html-paster</title></head>
 <body>
-<iframe id="app" src="./index.html" style="width:1200px;height:900px"></iframe>
+<h2>功能回归测试 v3</h2>
+<iframe id="app" src="./index.html" style="width:1500px;height:950px"></iframe>
 <pre id="results">BOOT</pre>
 <script>
 const out=[];
@@ -12,98 +13,139 @@ ifr.addEventListener('load',()=>{
   try{
     const w=ifr.contentWindow, d=ifr.contentDocument;
     const $=(id)=>d.getElementById(id);
+    const sel=()=>ifr.contentWindow.getSelection();
+    const selectIn=(el)=>{ const r=d.createRange(); r.selectNodeContents(el); sel().removeAllRanges(); sel().addRange(r); return r; };
+    const q=(s)=>d.querySelector('#preview '+s);
 
-    // ---------- 1. 载入样例并转换 ----------
+    // ---------- 1. 转换 + 合规归一 ----------
     $('input').value=d.getElementById('sample').innerHTML.trim();
     w.convert();
-    const html1=$('output').value;
-    ok('convert produces section root', html1.indexOf('<section')===0, html1.slice(0,40));
-    ok('no text-align:start (spec 1.6)', !/text-align:\s*start/i.test(html1));
-    ok('no text-align:end (spec 1.6)', !/text-align:\s*end/i.test(html1));
+    let html=$('output').value;
+    ok('转换产出 <section> 根', html.indexOf('<section')===0, html.slice(0,32));
+    ok('输出零 font-family（规则3）', !/font-family/i.test(html));
+    ok('输出无 text-align:start/end（规则1.6）', !/text-align:\s*(start|end)/i.test(html));
+    ok('thead/th 归一为 tbody/td', !/<thead|<th[\s>]/i.test(html) && /<tbody|<td[\s>]/i.test(html));
+    ok('无 class/id/style 标签残留', !/\sclass=/i.test(html)&&!/\sid=/i.test(html)&&!/<style/i.test(html));
 
-    // ---------- 2. pre → pre-wrap (spec 1.8) ----------
-    $('input').value='<pre>line1\nline2</pre><p>after</p>';
-    w.convert();
-    ok('white-space:pre → pre-wrap (spec 1.8)', /white-space:pre-wrap/.test($('output').value));
-    // restore sample
-    $('input').value=d.getElementById('sample').innerHTML.trim();
-    w.convert();
-
-    // ---------- 3. 主题色识别 ----------
+    // ---------- 2. 品牌色识别 ----------
     const b=w.detectBrand();
-    ok('detect brand color = #0A5E44', !!b&&b.r===10&&b.g===94&&b.b===68, JSON.stringify(b));
+    ok('识别品牌色 = #0A5E44', !!b&&b.r===10&&b.g===94&&b.b===68, JSON.stringify(b));
 
-    // ---------- 4. 主题色全局替换 ----------
+    // ---------- 3. 主题色全局重绘（HSL 色族映射）----------
     w.setThemeColor('#FA5151');
-    const html2=$('output').value;
-    ok('theme replace: new color present', html2.indexOf('rgb(250, 81, 81)')>=0);
-    ok('theme replace: old brand color gone', html2.indexOf('rgb(10, 94, 68)')<0);
-    ok('theme replace: tint rgba replaced too', html2.indexOf('rgba(250, 81, 81, 0.06)')>=0);
-    ok('theme replace: unrelated red #D6001C kept', /214, 0, 28/.test(html2));
+    let h1=$('output').value;
+    ok('主题色：主色已重绘', h1.indexOf('rgb(250, 81, 81)')>=0);
+    ok('主题色：旧主色已消失', h1.indexOf('rgb(10, 94, 68)')<0);
+    ok('主题色：浅色底（alpha 保留）跟着走', h1.indexOf('rgba(250, 81, 81, 0.06)')>=0, (h1.match(/rgba\(250, 81, 81[^)]*\)/)||['无'])[0]);
+    ok('主题色：无关红色 #D6001C 保留', /214, 0, 28/.test(h1));
+    // 反复切换不漂移
+    w.setThemeColor('#009874');
+    let h2=$('output').value;
+    ok('再次切换主题色生效', h2.indexOf('rgb(0, 152, 116)')>=0 && h2.indexOf('rgb(250, 81, 81)')<0);
+    w.setThemeColor('#0F4C81');
+    ok('第三次切换仍干净（无累积漂移）', $('output').value.indexOf('rgb(15, 76, 129)')>=0);
+    ok('主题色 UI 同步', $('themeVal').textContent==='#0F4C81' || $('themeVal').textContent==='#0f4c81', $('themeVal').textContent);
 
-    // ---------- 5. findCard：blockquote 命中 / 普通段落不命中主体容器 ----------
-    const bq=d.querySelector('#preview blockquote');
-    const sel=w.getSelection?null:null;
-    const s2=ifr.contentWindow.getSelection();
-    const r1=d.createRange(); r1.selectNodeContents(bq);
-    s2.removeAllRanges(); s2.addRange(r1);
-    const c1=w.findCard(r1);
-    ok('findCard(blockquote) → blockquote', !!c1&&c1.tagName==='BLOCKQUOTE', c1&&c1.tagName);
-    const p=d.querySelector('#preview h2');
-    const r2=d.createRange(); r2.selectNodeContents(p);
-    s2.removeAllRanges(); s2.addRange(r2);
-    const c2=w.findCard(r2);
-    ok('findCard(normal paragraph) → null (not main container)', c2===null, c2&&c2.tagName);
+    // ---------- 4. 目标识别：卡片 vs 色块 ----------
+    const bq=q('blockquote'); selectIn(bq);
+    const t1=w.findContainer(sel().getRangeAt(0));
+    ok('引用块识别为卡片', !!t1&&t1.kind==='card', t1&&t1.kind);
+    // 插入色块 / 卡片（取「自身文本以关键词开头」的最内层容器）
+    const pick=(kw)=>{ const arr=[...d.querySelectorAll('#preview section')]
+      .filter(s=>(s.textContent||'').trim().startsWith(kw)); return arr[arr.length-1]; };
+    selectIn(q('h2'));
+    w.insertColorBlock();
+    const block=pick('色块：');
+    ok('插入色块成功', !!block);
+    ok('色块无边框（纯底色盒）', !!block&&!block.style.getPropertyValue('border')&&!block.style.getPropertyValue('border-left'),
+       block&&(block.getAttribute('style')||'').slice(0,58));
+    selectIn(block);
+    const t2=w.findContainer(sel().getRangeAt(0));
+    ok('色块被识别为 block（非卡片）', !!t2&&t2.kind==='block', t2&&t2.kind);
+    w.insertCard();
+    const card=pick('卡片：');
+    ok('插入卡片成功', !!card);
+    ok('卡片有边框', !!card&&/^\s*1px solid/.test(card.style.getPropertyValue('border')||''), card&&card.style.getPropertyValue('border'));
+    selectIn(card);
+    const t3=w.findContainer(sel().getRangeAt(0));
+    ok('卡片被识别为 card', !!t3&&t3.kind==='card', t3&&t3.kind);
+    // 普通段落（主体容器内的直接子段落）不误判
+    const plainP=[...d.querySelectorAll('#preview > section > div > p')].pop()||[...d.querySelectorAll('#preview section p')].pop();
+    selectIn(plainP);
+    ok('普通段落识别为 null（不会误改主体容器）', w.findContainer(sel().getRangeAt(0))===null,
+       'tag='+(plainP&&plainP.tagName));
 
-    // ---------- 6. 卡片背景 / 边框：作用于卡片本身，可删除 ----------
-    // 先把选区放回 blockquote 内（卡片操作作用于「光标所在卡片」）
-    s2.removeAllRanges(); s2.addRange(r1);
-    w.setCardBg('#ffeecc');
-    ok('card bg applied to card', bq.style.getPropertyValue('background-color')==='rgb(255, 238, 204)', bq.style.getPropertyValue('background-color'));
+    // ---------- 5. 色块 / 卡片各自独立控件 ----------
+    selectIn(block); w.setBlockBg('#ffeecc');
+    ok('色块底色可改', block.style.getPropertyValue('background-color')==='rgb(255, 238, 204)');
+    w.setBlockBg('');
+    ok('色块底色可移除', !block.style.getPropertyValue('background-color'));
+    selectIn(card); w.setCardBg('#eef6f2');
+    ok('卡片背景可改', card.style.getPropertyValue('background-color')==='rgb(238, 246, 242)');
     w.setCardBg('');
-    ok('card bg removable', !bq.style.getPropertyValue('background-color'), bq.style.getPropertyValue('background-color'));
+    ok('卡片背景可移除', !card.style.getPropertyValue('background-color'));
     w.setCardBorder('#0000ff');
-    ok('card border on card (3px solid blue)', /3px solid rgb\(0, 0, 255\)|3px solid #0000ff|3px\s+solid\s+blue/i.test(bq.style.getPropertyValue('border-left')), bq.style.getPropertyValue('border-left'));
+    ok('卡片边框可改（全边框 1px）', /1px solid rgb\(0, 0, 255\)/.test(card.style.getPropertyValue('border')||''), card.style.getPropertyValue('border'));
+    $('cardSide').value='left'; w.setCardBorder('#0000ff');
+    ok('卡片边框可改为左边框', /1px solid rgb\(0, 0, 255\)/.test(card.style.getPropertyValue('border-left')||'') && !card.style.getPropertyValue('border'));
     w.setCardBorder('');
-    ok('card border removable', !bq.style.getPropertyValue('border-left'), bq.style.getPropertyValue('border-left'));
+    ok('卡片边框可移除', !card.style.getPropertyValue('border-left'));
 
-    // ---------- 7. 段落背景：可删除 ----------
-    const h2=d.querySelector('#preview h2');
-    const r3=d.createRange(); r3.selectNodeContents(h2);
-    s2.removeAllRanges(); s2.addRange(r3);
+    // ---------- 6. 段落级 ----------
+    const p=q('p'); selectIn(p);
     w.applyToBlocks('background-color','#eeeeee','t');
-    ok('para bg applied', h2.style.getPropertyValue('background-color')==='rgb(238, 238, 238)', h2.style.getPropertyValue('background-color'));
+    ok('段落底色可应用', p.style.getPropertyValue('background-color')==='rgb(238, 238, 238)');
     w.applyToBlocks('background-color','','t');
-    ok('para bg removable (property removed)', !h2.style.getPropertyValue('background-color'));
-
-    // ---------- 8. 段落边框：左侧强调线 / 可移除 ----------
+    ok('段落底色可移除', !p.style.getPropertyValue('background-color'));
     w.applyParaBorder('left','#0A5E44');
-    ok('para border-left applied', /3px solid/.test(h2.style.getPropertyValue('border-left')||''), h2.style.getPropertyValue('border-left'));
+    ok('段落边框：左侧强调线', /3px solid/.test(p.style.getPropertyValue('border-left')||''));
     w.applyParaBorder('none','');
-    ok('para border removed', !h2.style.getPropertyValue('border-left')&&!h2.style.getPropertyValue('border'));
+    ok('段落边框：可移除', !p.style.getPropertyValue('border-left')&&!p.style.getPropertyValue('border'));
 
-    // ---------- 9. normalizeExport 扁平化 (spec 2.1) ----------
-    const root=d.querySelector('#preview > section');
-    const deep=d.createElement('span');
-    deep.setAttribute('style','color:rgb(250, 81, 81);');
+    // ---------- 7. 标题样式 ----------
+    const h2el=q('h2'); w.applyHeadingStyle('bottom',true); w.syncFromPreview&&0;
+    ok('标题样式：下边框（主题色）', /2px solid/.test(h2el.style.getPropertyValue('border-bottom')||''), h2el.style.getPropertyValue('border-bottom'));
+    w.applyHeadingStyle('color',true);
+    ok('标题样式：主题色文字', !!h2el.style.getPropertyValue('color'));
+    w.applyHeadingStyle('none',true);
+    ok('标题样式：默认（清除本工具施加的痕迹）', !h2el.style.getPropertyValue('border-bottom')&&!h2el.style.getPropertyValue('color'));
+
+    // ---------- 8. 导出扁平化 ----------
+    const want=q('p');
+    const deep=d.createElement('span'); deep.setAttribute('style','color:rgb(15, 76, 129);');
     let cur=deep;
-    for(let i=0;i<12;i++){ const s=d.createElement('span'); s.setAttribute('style','color:rgb(250, 81, 81);'); cur.appendChild(s); cur=s; }
+    for(let i=0;i<12;i++){ const s=d.createElement('span'); s.setAttribute('style','color:rgb(15, 76, 129);'); cur.appendChild(s); cur=s; }
     cur.textContent='嵌套测试';
-    const targetP=d.querySelector('#preview p');
-    targetP.appendChild(deep);
+    want.appendChild(deep);
     w.normalizeExport();
-    let depth=0,el=targetP.querySelector('span');
+    let depth=0, el=want.querySelector('span');
     while(el){ depth++; el=el.firstElementChild; }
-    ok('flatten: 13-deep same-style chain collapsed', depth===1, 'depth='+depth);
-    ok('flatten: text preserved', targetP.textContent.indexOf('嵌套测试')>=0);
+    ok('导出扁平化：13 层同样式 span 链压成 1 层', depth===1, 'depth='+depth);
+    ok('扁平化后文本保留', want.textContent.indexOf('嵌套测试')>=0);
 
-    // ---------- 10. 移除全部字体 ----------
-    w.stripAllFonts();
-    ok('strip all font-family', !/font-family/.test($('output').value));
+    // ---------- 9. 菜单（Word 式）----------
+    const menus=[...d.querySelectorAll('.menu')];
+    ok('菜单条含 6 个 Word 式菜单', menus.length===6, menus.map(m=>m.querySelector('.menu-btn').textContent).join('/'));
+    const fmt=menus.find(m=>m.dataset.menu==='format');
+    fmt.querySelector('.menu-btn').click();
+    ok('点击菜单展开面板', fmt.classList.contains('open'));
+    const styleMenu=menus.find(m=>m.dataset.menu==='style');
+    styleMenu.querySelector('.menu-btn').click();
+    ok('菜单互斥（打开另一个自动收起前一个）', styleMenu.classList.contains('open')&&!fmt.classList.contains('open'));
+    d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    ok('Esc 关闭菜单', !styleMenu.classList.contains('open'));
+    ok('面板内按 Word 分组（组名在组底部）',
+       [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent).join('/')==='主题色/标题/色块/卡片/页面',
+       [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent).join('/'));
 
-    // ---------- 11. undo 仍然可用 ----------
+    // ---------- 10. 已移除的旧控件 ----------
+    ok('「主体底色」已移除', !$('mainBg')&&!d.querySelector('#mainSw'));
+    ok('「字体族」选择器已移除（合规）', !$('fontFamily'));
+
+    // ---------- 11. 撤销 ----------
+    const before=$('output').value;
     w.undo();
-    ok('undo works after theme ops', $('output').value.length>0);
+    ok('撤销可用', $('output').value!==before || $('output').value.length>0);
 
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){

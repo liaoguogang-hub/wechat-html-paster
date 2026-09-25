@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>layout stability test · wechat-html-paster</title></head>
+<head><meta charset="UTF-8"><title>layout test v3 · wechat-html-paster</title></head>
 <body>
-<h2>布局稳定性 / CSS 隔离 测试</h2>
-<iframe id="app" src="./index.html" style="width:1200px;height:900px"></iframe>
+<h2>布局 / 隔离 / 交互 测试 v3</h2>
+<iframe id="app" src="./index.html" style="width:1500px;height:950px"></iframe>
 <pre id="results">BOOT</pre>
 <script>
 const out=[];
@@ -13,55 +13,97 @@ ifr.addEventListener('load',()=>{
   try{
     const w=ifr.contentWindow, d=ifr.contentDocument;
     const $=(id)=>d.getElementById(id);
-    const bar=()=>d.querySelector('.editorbar');
+    const R=(el)=>{ const b=el.getBoundingClientRect(); return {x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.width),h:Math.round(b.height)}; };
     const snap=()=>({
-      barH:bar().offsetHeight, barW:bar().offsetWidth,
-      ribbonH:d.querySelector('.ribbon').offsetHeight,
-      statusH:d.querySelector('.statusbar').offsetHeight,
-      fontW:$('fontFamily').offsetWidth,
-      layoutW:d.querySelector('.layout').offsetWidth,
-      headerW:d.querySelector('header').offsetWidth,
+      appbarH:R(d.querySelector('.appbar')).h,
+      menuX:R(d.querySelector('.menubar')).x,
+      sourceW:R(d.querySelector('.pane-source')).w,
+      previewPaneW:R(d.querySelector('.pane-preview')).w,
+      previewW:R($('preview')).w,
+      statusH:R(d.querySelector('.statusbar')).h,
       bodyPadL:w.getComputedStyle(d.body).paddingLeft,
       bodyBg:w.getComputedStyle(d.body).backgroundColor
     });
-    const a=snap();                       // 未载入 HTML 时（紧凑态）
+    const a=snap();
 
+    // ---------- 布局骨架（对齐 nihaotk）----------
+    ok('顶栏在页面最顶部', R(d.querySelector('.appbar')).y<=1, 'y='+R(d.querySelector('.appbar')).y);
+    ok('菜单条位于最左侧', a.menuX<=14, 'menubar.x='+a.menuX);
+    const btns=[...d.querySelectorAll('.menu-btn')].map(b=>R(b));
+    ok('6 个菜单横向排开且在最左', btns.length===6 && btns[0].x<26 && btns.every(b=>b.y<56));
+    ok('顶栏高度 ≈56px（nihaotk 的 62px 同量级）', a.appbarH>=52&&a.appbarH<=64, a.appbarH+'px');
+    ok('左输入 / 右预览 双栏布局', a.sourceW>200 && a.previewPaneW>200 && R(d.querySelector('.pane-source')).x < R(d.querySelector('.pane-preview')).x,
+       'source='+a.sourceW+' preview='+a.previewPaneW);
+    ok('存在可拖拽分隔条', !!$('splitter'));
+    ok('预览默认电脑端适配', !$('preview').classList.contains('mobile'));
+
+    // ---------- 载入前后零位移 ----------
     $('input').value=d.getElementById('sample').innerHTML.trim();
     w.convert();
-
-    // 模拟用户点进预览区并选中文字（触发 reflectSelection / 动态 option）
     const p=d.querySelector('#preview p');
-    const sel=ifr.contentWindow.getSelection();
     const r=d.createRange(); r.selectNodeContents(p);
-    sel.removeAllRanges(); sel.addRange(r);
+    const s=ifr.contentWindow.getSelection(); s.removeAllRanges(); s.addRange(r);
     w.reflectSelection();
-
-    const b=snap();                       // 载入并选中后
-
-    ok('工具栏高度不变', a.barH===b.barH, a.barH+' -> '+b.barH);
-    ok('工具栏宽度不变', a.barW===b.barW, a.barW+' -> '+b.barW);
-    ok('功能区高度不变', a.ribbonH===b.ribbonH, a.ribbonH+' -> '+b.ribbonH);
+    const b=snap();
+    ok('顶栏高度不变', a.appbarH===b.appbarH, a.appbarH+' -> '+b.appbarH);
+    ok('菜单条位置不变', a.menuX===b.menuX, a.menuX+' -> '+b.menuX);
+    ok('左栏宽度不变', a.sourceW===b.sourceW, a.sourceW+' -> '+b.sourceW);
+    ok('右栏宽度不变', a.previewPaneW===b.previewPaneW, a.previewPaneW+' -> '+b.previewPaneW);
     ok('状态栏高度恒定', a.statusH===b.statusH && a.statusH>0, a.statusH+' -> '+b.statusH);
-    ok('字体下拉宽度固定', a.fontW===b.fontW, a.fontW+' -> '+b.fontW);
-    ok('栅格列宽不变', a.layoutW===b.layoutW, a.layoutW+' -> '+b.layoutW);
-    ok('页头宽度不变', a.headerW===b.headerW, a.headerW+' -> '+b.headerW);
-    // ★ 用户反馈 2 的根因回归：文章 CSS 不得泄漏到工具页面
-    ok('文章 CSS 未泄漏(body padding)', a.bodyPadL===b.bodyPadL, a.bodyPadL+' -> '+b.bodyPadL);
-    ok('文章 CSS 未泄漏(body 背景色)', a.bodyBg===b.bodyBg, a.bodyBg+' -> '+b.bodyBg);
-    ok('输出中不含 <style>', !/<style/i.test($('output').value));
-    ok('状态栏有选区回显（单行）', $('selinfo').textContent.length>0, $('selinfo').textContent.slice(0,26)+'…');
+    ok('文章 CSS 未泄漏（body padding）', a.bodyPadL===b.bodyPadL, a.bodyPadL+' -> '+b.bodyPadL);
+    ok('文章 CSS 未泄漏（body 背景）', a.bodyBg===b.bodyBg, a.bodyBg+' -> '+b.bodyBg);
 
-    // ---------- 结构性断言（替代视觉检查） ----------
-    const labels=[...d.querySelectorAll('#ribbon .grp-name')].map(e=>e.textContent.trim());
-    ok('功能区五分组标签顺序正确', labels.join('/')==='字体/段落/插入/卡片/主题', labels.join('/'));
-    ok('段落组含段落背景控件', !!d.querySelector('#ribbon .grp #blockBg')&&!!$('blockBgNone'));
-    ok('段落组含边框控件', !!$('paraBorderSel')&&!!$('paraBorderColor'));
-    ok('QAT 含复制/下载/撤销/重做/预览宽度', !!( $('copy')&&$('download')&&$('undoBtn')&&$('redoBtn')&&$('pvMob')&&$('pvWide') ));
-    ok('主题组含 11 个预设色板', d.querySelectorAll('#themeSw .sw').length===11, d.querySelectorAll('#themeSw .sw').length+' swatches');
-    const ov=[...d.querySelectorAll('#ribbon *')].filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible');
-    ok('功能区无内容溢出/裁切', ov.length===0, ov.length?ov.map(e=>e.className||e.tagName).slice(0,5).join(','):'none');
-    const qatOv=[...d.querySelectorAll('.qat *')].filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible');
-    ok('QAT 无内容溢出', qatOv.length===0, qatOv.length?qatOv.map(e=>e.className||e.tagName).slice(0,5).join(','):'none');
+    // ---------- 预览设备切换 ----------
+    d.querySelector('#deviceSeg button[data-dev="mobile"]').click();
+    ok('移动端预览为 375px 手机框', Math.abs(R($('preview')).w-375)<=2, R($('preview')).w+'px');
+    ok('手机框有左右描边与阴影',
+       w.getComputedStyle($('preview')).borderLeftWidth!=='0px' && w.getComputedStyle($('preview')).boxShadow!=='none');
+    d.querySelector('#deviceSeg button[data-dev="pc"]').click();
+    ok('切回电脑端自适应', Math.abs(R($('preview')).w-578)<=2, R($('preview')).w+'px');
+
+    // ---------- 分隔条拖拽 ----------
+    const before=R(d.querySelector('.pane-source')).w;
+    const sp=$('splitter'), ws=$('workspace');
+    const wr=R(ws);
+    sp.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:wr.x+before,clientY:wr.y+40}));
+    w.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:wr.x+wr.w*0.55,clientY:wr.y+40}));
+    w.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+    ok('分隔条拖拽改变左栏宽度', R(d.querySelector('.pane-source')).w!==before,
+       before+' -> '+R(d.querySelector('.pane-source')).w);
+    sp.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+
+    // ---------- 菜单面板几何 ----------
+    const styleMenu=[...d.querySelectorAll('.menu')].find(m=>m.dataset.menu==='style');
+    styleMenu.querySelector('.menu-btn').click();
+    const panel=styleMenu.querySelector('.menu-panel');
+    const pr=R(panel);
+    ok('菜单面板显示在按钮下方', pr.h>0 && pr.y>=R(styleMenu.querySelector('.menu-btn')).y, 'panel '+pr.w+'x'+pr.h+' @'+pr.x+','+pr.y);
+    ok('样式面板含 11 个预设主题色按钮', panel.querySelectorAll('.theme-btn').length===11, panel.querySelectorAll('.theme-btn').length+' 个');
+    ok('主题色按钮带名称与色块',
+       [...panel.querySelectorAll('.theme-btn')].every(b=>b.querySelector('.theme-chip')&&b.textContent.trim().length>0),
+       [...panel.querySelectorAll('.theme-btn')].slice(0,3).map(b=>b.textContent.trim()).join('/'));
+    ok('面板内分组带组名（Word 式）', panel.querySelectorAll('.mgroup-name').length>=5);
+    ok('面板无内容溢出裁切',
+       [...panel.querySelectorAll('*')].filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible').length===0);
+    d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    ok('Esc 关闭面板', !styleMenu.classList.contains('open'));
+
+    // ---------- 色块 / 卡片在预览中的视觉区分 ----------
+    const pEl=d.querySelector('#preview p');
+    const rr=d.createRange(); rr.selectNodeContents(pEl);
+    s.removeAllRanges(); s.addRange(rr);
+    w.insertColorBlock(); w.insertCard();
+    const pick=(kw)=>{ const arr=[...d.querySelectorAll('#preview section')]
+      .filter(x=>(x.textContent||'').trim().startsWith(kw)); return arr[arr.length-1]; };
+    const blk=pick('色块：'), card=pick('卡片：');
+    const csB=w.getComputedStyle(blk), csC=w.getComputedStyle(card);
+    ok('色块：有底色、无边框',
+       csB.backgroundColor!=='rgba(0, 0, 0, 0)' && csB.borderTopWidth==='0px' && csB.borderLeftWidth==='0px',
+       csB.backgroundColor+' / border '+csB.borderTopWidth);
+    ok('卡片：有边框（宽度>0）', parseFloat(csC.borderLeftWidth)>0, 'border-left '+csC.borderLeftWidth);
+    ok('色块与卡片圆角/内边距也不同（视觉可区分）',
+       csB.borderRadius!==csC.borderRadius || csB.paddingLeft!==csC.paddingLeft,
+       '色块 r='+csB.borderRadius+' 卡片 r='+csC.borderRadius);
 
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
