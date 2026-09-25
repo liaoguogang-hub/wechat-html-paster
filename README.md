@@ -183,3 +183,7 @@ git tag                         # 标签即版本
 ```
 
 发版流程：改 `wechat-html-paster.html` → 更新 `CHANGELOG.md` → 跑三套测试 → `cp wechat-html-paster.html versions/vX.Y.Z.html`（可选存档）→ 提交 → `git tag vX.Y.Z`。
+
+## 许可证
+
+[MIT](./LICENSE) © 2026 liaoguogang
