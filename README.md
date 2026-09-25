@@ -184,6 +184,11 @@ git tag                         # 标签即版本
 
 发版流程：改 `wechat-html-paster.html` → 更新 `CHANGELOG.md` → 跑三套测试 → `cp wechat-html-paster.html versions/vX.Y.Z.html`（可选存档）→ 提交 → `git tag vX.Y.Z`。
 
+作者身份：全部提交与标签统一用 `liaoguogang-hub <306435810+liaoguogang-hub@users.noreply.github.com>`
+（仓库内已配置 `user.name` / `user.email`，且用 GitHub 的「账号 ID + 用户名」noreply 邮箱形式，保证提交能归属到头像）。
+历史里如果出现别的名字（如 `guoga@localhost`、`liaoguogang@…`），用
+`git filter-branch --env-filter … --tag-name-filter cat -- --all` 重写后强制推送即可。
+
 ## 许可证
 
-[MIT](./LICENSE) © 2026 liaoguogang
+[MIT](./LICENSE) © 2026 liaoguogang-hub
