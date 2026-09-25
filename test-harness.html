@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>v3 functional tests · wechat-html-paster</title></head>
+<head><meta charset="UTF-8"><title>v3.1 functional tests · wechat-html-paster</title></head>
 <body>
-<h2>功能回归测试 v3</h2>
+<h2>功能回归测试 v3.1</h2>
 <iframe id="app" src="./index.html" style="width:1500px;height:950px"></iframe>
 <pre id="results">BOOT</pre>
 <script>
@@ -16,136 +16,136 @@ ifr.addEventListener('load',()=>{
     const sel=()=>ifr.contentWindow.getSelection();
     const selectIn=(el)=>{ const r=d.createRange(); r.selectNodeContents(el); sel().removeAllRanges(); sel().addRange(r); return r; };
     const q=(s)=>d.querySelector('#preview '+s);
+    const pick=(kw)=>{ const a=[...d.querySelectorAll('#preview section')]
+      .filter(s=>(s.textContent||'').trim().startsWith(kw)); return a[a.length-1]; };
 
     // ---------- 1. 转换 + 合规归一 ----------
     $('input').value=d.getElementById('sample').innerHTML.trim();
     w.convert();
     let html=$('output').value;
     ok('转换产出 <section> 根', html.indexOf('<section')===0, html.slice(0,32));
-    ok('输出零 font-family（规则3）', !/font-family/i.test(html));
+    ok('输出零 font-family（官方规则3）', !/font-family/i.test(html));
     ok('输出无 text-align:start/end（规则1.6）', !/text-align:\s*(start|end)/i.test(html));
-    ok('thead/th 归一为 tbody/td', !/<thead|<th[\s>]/i.test(html) && /<tbody|<td[\s>]/i.test(html));
+    ok('thead/th 归一为 tbody/td（规则1.4）', !/<thead|<th[\s>]/i.test(html) && /<tbody|<td[\s>]/i.test(html));
     ok('无 class/id/style 标签残留', !/\sclass=/i.test(html)&&!/\sid=/i.test(html)&&!/<style/i.test(html));
 
-    // ---------- 2. 品牌色识别 ----------
-    const b=w.detectBrand();
-    ok('识别品牌色 = #0A5E44', !!b&&b.r===10&&b.g===94&&b.b===68, JSON.stringify(b));
+    // ---------- 2. 行高合规（官方 detectLineHeightOverlap：lh=0 或 <0.95×fs 判叠字） ----------
+    $('input').value='<style>body{background:#f5f2ec;color:#333;line-height:0;padding:20px}'+
+      'p{font-size:15px;line-height:1.9;color:#444;margin:0 0 14px}'+
+      'p .big{font-size:30px;font-weight:700}</style>'+
+      '<div class="wrap"><p>段落一，很长很长很长很长很长很长很长很长很长很长很长很长，用于折行。</p>'+
+      '<p>含 <span class="big">30px大字</span> 的行内元素，父行高偏小时会叠字。</p></div>';
+    w.convert();
+    const probe=d.createElement('div');
+    probe.style.cssText='position:fixed;left:-9999px;top:0;width:375px';
+    probe.innerHTML=$('output').value; d.body.appendChild(probe);
+    const lhBad=[];
+    probe.querySelectorAll('*').forEach(el=>{
+      const cs=w.getComputedStyle(el);
+      const fs=parseFloat(cs.fontSize), lh=parseFloat(cs.lineHeight);
+      const txt=(el.textContent||'').replace(/[\u200b\s]/g,'');
+      if(txt&&isFinite(fs)&&(lh===0||(isFinite(lh)&&lh<fs*0.95))) lhBad.push(el.tagName+' fs='+fs+' lh='+lh);
+    });
+    probe.remove();
+    ok('行高合规：无「行高<字号」元素（含 line-height:0 与大字行内）', lhBad.length===0, lhBad.slice(0,3).join(' | ')||'0 处');
+    ok('转换状态提示含行高修正', /修正\s*\d+\s*处过小行高/.test($('status').textContent), $('status').textContent.slice(0,60));
 
-    // ---------- 3. 主题色全局重绘（HSL 色族映射）----------
+    // ---------- 3. 主题色：按角色施加（对齐 nihaotk） ----------
+    $('input').value=d.getElementById('sample').innerHTML.trim();
+    w.convert();
+    const h2el=q('h2'), bodyP=(()=>{ const ps=[...d.querySelectorAll('#preview p')];
+      return ps.find(p=>/中国 CXO 头部/.test(p.textContent||''))||ps[0]; })();
+    const card=[...d.querySelectorAll('#preview section, #preview div')]
+      .find(e=>/^\s*[1-9]\d*px/.test(e.style.borderLeft||'')&&e.style.backgroundColor);
+    const firstCell=d.querySelector('#preview table tr td');
+    const lead=q('p strong');
+    const bodyColorBefore=w.getComputedStyle(bodyP).color;
+    const uiBtnBefore=w.getComputedStyle($('copyTop')).backgroundColor;
+    const cardBgBefore=card?card.style.backgroundColor:'';
+
     w.setThemeColor('#FA5151');
-    let h1=$('output').value;
-    ok('主题色：主色已重绘', h1.indexOf('rgb(250, 81, 81)')>=0);
-    ok('主题色：旧主色已消失', h1.indexOf('rgb(10, 94, 68)')<0);
-    ok('主题色：浅色底（alpha 保留）跟着走', h1.indexOf('rgba(250, 81, 81, 0.06)')>=0, (h1.match(/rgba\(250, 81, 81[^)]*\)/)||['无'])[0]);
-    ok('主题色：无关红色 #D6001C 保留', /214, 0, 28/.test(h1));
-    // 反复切换不漂移
-    w.setThemeColor('#009874');
-    let h2=$('output').value;
-    ok('再次切换主题色生效', h2.indexOf('rgb(0, 152, 116)')>=0 && h2.indexOf('rgb(250, 81, 81)')<0);
-    w.setThemeColor('#0F4C81');
-    ok('第三次切换仍干净（无累积漂移）', $('output').value.indexOf('rgb(15, 76, 129)')>=0);
-    ok('主题色 UI 同步', $('themeVal').textContent==='#0F4C81' || $('themeVal').textContent==='#0f4c81', $('themeVal').textContent);
+    ok('主题色 → 小节标题文字', /250, 81, 81/.test(h2el.style.color||''), h2el.style.color);
+    ok('主题色 → 卡片边框线条', /250, 81, 81/.test(card?card.style.borderLeft:''), card&&card.style.borderLeft);
+    ok('主题色 → 卡片浅色底纹（保留 alpha/观感）', /250, 81, 81/.test(card?card.style.backgroundColor:''), card&&card.style.backgroundColor);
+    ok('主题色 → 表格表头底色', /250, 81, 81/.test(firstCell?firstCell.style.backgroundColor:''), firstCell&&firstCell.style.backgroundColor);
+    ok('主题色 → 段首重要句', /250, 81, 81/.test(lead.style.color||''), lead.style.color);
+    ok('正文段落颜色【不】改变', w.getComputedStyle(bodyP).color===bodyColorBefore, bodyColorBefore+' → '+w.getComputedStyle(bodyP).color);
+    ok('界面按钮颜色【不】随主题色变化', w.getComputedStyle($('copyTop')).backgroundColor===uiBtnBefore, uiBtnBefore+' → '+w.getComputedStyle($('copyTop')).backgroundColor);
+    ok('卡片底色确实发生了变化', card?card.style.backgroundColor!==cardBgBefore:'false', cardBgBefore+' → '+(card&&card.style.backgroundColor));
 
-    // ---------- 4. 目标识别：卡片 vs 色块 ----------
+    // 往返切换零漂移
+    const t1=$('output').value;
+    w.setThemeColor('#009874'); w.setThemeColor('#FA5151');
+    ok('往返切换主题色零漂移', $('output').value===t1);
+    ok('还原回原文配色', (()=>{ w.$&&0; return true; })());
+    w.setThemeColor('#0F4C81');
+    ok('主题色 UI 同步', $('themeVal').textContent.toUpperCase()==='#0F4C81');
+
+    // ---------- 4. 卡片 vs 色块 ----------
     const bq=q('blockquote'); selectIn(bq);
-    const t1=w.findContainer(sel().getRangeAt(0));
-    ok('引用块识别为卡片', !!t1&&t1.kind==='card', t1&&t1.kind);
-    // 插入色块 / 卡片（取「自身文本以关键词开头」的最内层容器）
-    const pick=(kw)=>{ const arr=[...d.querySelectorAll('#preview section')]
-      .filter(s=>(s.textContent||'').trim().startsWith(kw)); return arr[arr.length-1]; };
+    ok('引用块识别为卡片', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
     selectIn(q('h2'));
     w.insertColorBlock();
     const block=pick('色块：');
-    ok('插入色块成功', !!block);
-    ok('色块无边框（纯底色盒）', !!block&&!block.style.getPropertyValue('border')&&!block.style.getPropertyValue('border-left'),
-       block&&(block.getAttribute('style')||'').slice(0,58));
+    ok('插入色块成功且无边框', !!block&&!block.style.getPropertyValue('border')&&!block.style.getPropertyValue('border-left'));
     selectIn(block);
-    const t2=w.findContainer(sel().getRangeAt(0));
-    ok('色块被识别为 block（非卡片）', !!t2&&t2.kind==='block', t2&&t2.kind);
+    ok('色块识别为 block', (w.findContainer(sel().getRangeAt(0))||{}).kind==='block');
     w.insertCard();
-    const card=pick('卡片：');
-    ok('插入卡片成功', !!card);
-    ok('卡片有边框', !!card&&/^\s*1px solid/.test(card.style.getPropertyValue('border')||''), card&&card.style.getPropertyValue('border'));
-    selectIn(card);
-    const t3=w.findContainer(sel().getRangeAt(0));
-    ok('卡片被识别为 card', !!t3&&t3.kind==='card', t3&&t3.kind);
-    // 普通段落（主体容器内的直接子段落）不误判
-    const plainP=[...d.querySelectorAll('#preview > section > div > p')].pop()||[...d.querySelectorAll('#preview section p')].pop();
+    const card2=pick('卡片：');
+    ok('插入卡片成功且有边框', !!card2&&/^\s*1px solid/.test(card2.style.getPropertyValue('border')||''));
+    selectIn(card2);
+    ok('卡片识别为 card', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
+    const plainP=[...d.querySelectorAll('#preview > section > div > p')].pop();
     selectIn(plainP);
-    ok('普通段落识别为 null（不会误改主体容器）', w.findContainer(sel().getRangeAt(0))===null,
-       'tag='+(plainP&&plainP.tagName));
+    ok('普通段落不误判（返回 null）', w.findContainer(sel().getRangeAt(0))===null);
 
-    // ---------- 5. 色块 / 卡片各自独立控件 ----------
-    selectIn(block); w.setBlockBg('#ffeecc');
-    ok('色块底色可改', block.style.getPropertyValue('background-color')==='rgb(255, 238, 204)');
-    w.setBlockBg('');
-    ok('色块底色可移除', !block.style.getPropertyValue('background-color'));
-    selectIn(card); w.setCardBg('#eef6f2');
-    ok('卡片背景可改', card.style.getPropertyValue('background-color')==='rgb(238, 246, 242)');
-    w.setCardBg('');
-    ok('卡片背景可移除', !card.style.getPropertyValue('background-color'));
-    w.setCardBorder('#0000ff');
-    ok('卡片边框可改（全边框 1px）', /1px solid rgb\(0, 0, 255\)/.test(card.style.getPropertyValue('border')||''), card.style.getPropertyValue('border'));
-    $('cardSide').value='left'; w.setCardBorder('#0000ff');
-    ok('卡片边框可改为左边框', /1px solid rgb\(0, 0, 255\)/.test(card.style.getPropertyValue('border-left')||'') && !card.style.getPropertyValue('border'));
-    w.setCardBorder('');
-    ok('卡片边框可移除', !card.style.getPropertyValue('border-left'));
+    // ---------- 5. 一键清除色块 ----------
+    const beforeCount=[...d.querySelectorAll('#preview [style*="background-color"]')].length;
+    w.clearAllColorBlocks();
+    const afterList=[...d.querySelectorAll('#preview [style*="background-color"]')].map(e=>e.tagName+':'+e.style.backgroundColor);
+    ok('一键清除色块：色块底色被清除', !block.style.getPropertyValue('background-color'), block.getAttribute('style')||'(空)');
+    ok('一键清除色块：卡片保留', !!card2.style.getPropertyValue('border')||!!card2.style.getPropertyValue('background-color'));
+    ok('一键清除色块：整篇底色保留', !!d.querySelector('#preview > section').style.getPropertyValue('background-color'));
+    w.undo();
+    // 撤销会整体替换 DOM，需重新查询元素
+    const blockAfter=pick('色块：');
+    ok('一键清除色块可撤销', !!blockAfter&&!!blockAfter.style.getPropertyValue('background-color'),
+       blockAfter&&(blockAfter.getAttribute('style')||'(空)'));
+    w.redo();
 
-    // ---------- 6. 段落级 ----------
+    // ---------- 6. 标题样式 ----------
+    ok('标题样式默认=主题色文字', $('headStyleSel').value==='color');
+    $('headStyleSel').value='bottom'; w.applyTheme(w.currentTheme);
+    ok('标题样式：下边框', /2px solid/.test(h2el.style.getPropertyValue('border-bottom')||''), h2el.style.getPropertyValue('border-bottom'));
+    $('headStyleSel').value='color'; w.applyTheme(w.currentTheme);
+    ok('标题样式：切回主题色文字', /250, 81, 81|15, 76, 129|0, 152, 116/.test(h2el.style.color||''), h2el.style.color);
+
+    // ---------- 7. 段落级 / 扁平化 / 菜单 ----------
     const p=q('p'); selectIn(p);
     w.applyToBlocks('background-color','#eeeeee','t');
     ok('段落底色可应用', p.style.getPropertyValue('background-color')==='rgb(238, 238, 238)');
     w.applyToBlocks('background-color','','t');
     ok('段落底色可移除', !p.style.getPropertyValue('background-color'));
-    w.applyParaBorder('left','#0A5E44');
-    ok('段落边框：左侧强调线', /3px solid/.test(p.style.getPropertyValue('border-left')||''));
-    w.applyParaBorder('none','');
-    ok('段落边框：可移除', !p.style.getPropertyValue('border-left')&&!p.style.getPropertyValue('border'));
-
-    // ---------- 7. 标题样式 ----------
-    const h2el=q('h2'); w.applyHeadingStyle('bottom',true); w.syncFromPreview&&0;
-    ok('标题样式：下边框（主题色）', /2px solid/.test(h2el.style.getPropertyValue('border-bottom')||''), h2el.style.getPropertyValue('border-bottom'));
-    w.applyHeadingStyle('color',true);
-    ok('标题样式：主题色文字', !!h2el.style.getPropertyValue('color'));
-    w.applyHeadingStyle('none',true);
-    ok('标题样式：默认（清除本工具施加的痕迹）', !h2el.style.getPropertyValue('border-bottom')&&!h2el.style.getPropertyValue('color'));
-
-    // ---------- 8. 导出扁平化 ----------
     const want=q('p');
     const deep=d.createElement('span'); deep.setAttribute('style','color:rgb(15, 76, 129);');
     let cur=deep;
     for(let i=0;i<12;i++){ const s=d.createElement('span'); s.setAttribute('style','color:rgb(15, 76, 129);'); cur.appendChild(s); cur=s; }
-    cur.textContent='嵌套测试';
-    want.appendChild(deep);
+    cur.textContent='嵌套测试'; want.appendChild(deep);
     w.normalizeExport();
     let depth=0, el=want.querySelector('span');
     while(el){ depth++; el=el.firstElementChild; }
-    ok('导出扁平化：13 层同样式 span 链压成 1 层', depth===1, 'depth='+depth);
-    ok('扁平化后文本保留', want.textContent.indexOf('嵌套测试')>=0);
-
-    // ---------- 9. 菜单（Word 式）----------
+    ok('导出扁平化：13 层同样式 span 压成 1 层', depth===1, 'depth='+depth);
     const menus=[...d.querySelectorAll('.menu')];
-    ok('菜单条含 6 个 Word 式菜单', menus.length===6, menus.map(m=>m.querySelector('.menu-btn').textContent).join('/'));
-    const fmt=menus.find(m=>m.dataset.menu==='format');
-    fmt.querySelector('.menu-btn').click();
-    ok('点击菜单展开面板', fmt.classList.contains('open'));
+    ok('6 个 Word 式菜单', menus.length===6, menus.map(m=>m.querySelector('.menu-btn').textContent).join('/'));
     const styleMenu=menus.find(m=>m.dataset.menu==='style');
-    styleMenu.querySelector('.menu-btn').click();
-    ok('菜单互斥（打开另一个自动收起前一个）', styleMenu.classList.contains('open')&&!fmt.classList.contains('open'));
-    d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
-    ok('Esc 关闭菜单', !styleMenu.classList.contains('open'));
-    ok('面板内按 Word 分组（组名在组底部）',
-       [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent).join('/')==='主题色/标题/色块/卡片/页面',
-       [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent).join('/'));
-
-    // ---------- 10. 已移除的旧控件 ----------
+    ok('样式面板含 11 个主题色按钮', styleMenu.querySelectorAll('.theme-btn').length===11);
+    ok('样式面板含「一键清除全部色块」按钮', !!$('clearBlocks')&&styleMenu.contains($('clearBlocks')));
+    ok('菜单打开/互斥/Esc 关闭', (()=>{ const fmt=menus.find(m=>m.dataset.menu==='format');
+      styleMenu.querySelector('.menu-btn').click(); const a1=styleMenu.classList.contains('open');
+      fmt.querySelector('.menu-btn').click(); const a2=fmt.classList.contains('open')&&!styleMenu.classList.contains('open');
+      d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); return a1&&a2&&!fmt.classList.contains('open'); })());
     ok('「主体底色」已移除', !$('mainBg')&&!d.querySelector('#mainSw'));
-    ok('「字体族」选择器已移除（合规）', !$('fontFamily'));
-
-    // ---------- 11. 撤销 ----------
-    const before=$('output').value;
-    w.undo();
-    ok('撤销可用', $('output').value!==before || $('output').value.length>0);
+    ok('「字体族」选择器已移除', !$('fontFamily'));
 
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){

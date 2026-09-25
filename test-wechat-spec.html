@@ -212,6 +212,41 @@ ifr.addEventListener('load',()=>{
     ok('无 id 属性残留', !/\sid=/i.test(html));
     ok('无 <style>/<script> 残留', !/<(style|script)/i.test(html));
 
+    // ========== 真实场景回归：line-height 叠字（用户线上告警复现）==========
+    // 官方 layout.ts detectLineHeightOverlap：lineHeight===0，或 实测平均行高 < fontSize*0.95
+    function officialOverlap(win,scope){
+      const bad=[];
+      scope.querySelectorAll('*').forEach(el=>{
+        const cs=win.getComputedStyle(el);
+        const fs=parseFloat(cs.fontSize); if(!isFinite(fs)||!fs) return;
+        const lhRaw=cs.lineHeight;
+        const lh=lhRaw==='normal'?fs*1.2:parseFloat(lhRaw);
+        const txt=(el.textContent||'').replace(/\u200b|\s/g,'');
+        if(!txt) return;
+        if(isFinite(lh)&&lh===0){ bad.push(el.tagName+' line-height:0'); return; }
+        const rects=el.getClientRects().length||1;
+        const h=el.getBoundingClientRect().height;
+        const avg=rects>0?h/rects:h;
+        if(avg<fs*0.95) bad.push(el.tagName+' avgLineHeight='+avg.toFixed(1)+' < '+ (fs*0.95).toFixed(1));
+      });
+      return bad;
+    }
+    const fixtures=[
+      {name:'line-height:0 且有文字',html:'<style>body{background:#fff;color:#333;line-height:0;padding:16px}p{font-size:15px;margin:0 0 12px}</style><div><p>这是一段很长很长的正文，用于折行测试行高是否合规。</p><p>第二段同样很长很长很长很长很长很长很长。</p></div>'},
+      {name:'大字号行内元素继承小行高',html:'<style>body{background:#fff;color:#333;padding:16px}p{font-size:15px;line-height:1.9;margin:0 0 12px}.big{font-size:30px;font-weight:700}</style><div><p>含 <span class="big">30px大字</span> 的行内元素，父行高小时会叠字。</p><p>普通段落也很长很长很长很长很长很长很长很长很长很长。</p></div>'}
+    ];
+    fixtures.forEach(fx=>{
+      $('input').value=fx.html;
+      w.convert();
+      const pr=d.createElement('div');
+      pr.style.cssText='position:fixed;left:-10000px;top:0;width:375px';
+      pr.innerHTML=$('output').value;
+      d.body.appendChild(pr);
+      const bad=officialOverlap(w,pr);
+      ok('行高叠字（'+fx.name+'）：零违规', bad.length===0, bad.slice(0,3).join(' | ')||'0 处');
+      pr.remove();
+    });
+
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
