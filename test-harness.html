@@ -17,6 +17,7 @@ ifr.addEventListener('load',()=>{
     const selectIn=(el)=>{ const r=d.createRange(); r.selectNodeContents(el); sel().removeAllRanges(); sel().addRange(r); return r; };
     const q=(s)=>d.querySelector('#preview '+s);
     // 取一个「无容器祖先」的普通段落（既不在色块/卡片内，也不是根节点）
+    const h1El=()=>d.querySelector('#preview h1')||d.querySelector('#preview h2');
     const plainParagraph=()=>{
       const rootSec=d.querySelector('#preview > section');
       const mains=new Set([...rootSec.children].filter(c=>/^(DIV|SECTION)$/.test(c.tagName)));   // 与 findContainer 一致：跳过页面级主体容器
@@ -183,6 +184,17 @@ ifr.addEventListener('load',()=>{
     ok('6 个 Word 式菜单', menus.length===6, menus.map(m=>m.querySelector('.menu-btn').textContent).join('/'));
     const styleMenu=menus.find(m=>m.dataset.menu==='style');
     ok('样式面板含 11 个主题色按钮', styleMenu.querySelectorAll('.theme-btn').length===11);
+    ok('样式面板按「全局 / 局部」两块组织',
+       [...styleMenu.querySelectorAll('.block-label')].map(e=>e.textContent.trim()).join('|')==='全局 · 影响整篇|局部 · 只改光标处',
+       [...styleMenu.querySelectorAll('.block-label')].map(e=>e.textContent.trim()).join('|'));
+    ok('全局=主题色+整篇底色；局部=标题配色+色块+卡片',
+       (()=>{ const b=[...styleMenu.querySelectorAll('.panel-block')];
+         const g=x=>[...x.querySelectorAll('.mgroup-name')].map(e=>e.textContent.trim()).join('/');
+         return b.length===2&&g(b[0])==='主题色/整篇底色'&&g(b[1])==='标题配色/色块/卡片'; })(),
+       [...styleMenu.querySelectorAll('.mgroup-name')].map(e=>e.textContent.trim()).join('/'));
+    ok('样式面板高度可控（不再超长）',
+       styleMenu.querySelector('.menu-panel').getBoundingClientRect().height<=d.documentElement.clientHeight-80,
+       Math.round(styleMenu.querySelector('.menu-panel').getBoundingClientRect().height)+'px');
     ok('样式面板含「清除这个色块的底色」按钮', !!$('blockBgNone')&&styleMenu.contains($('blockBgNone')));
     ok('菜单打开/互斥/Esc 关闭', (()=>{ const fmt=menus.find(m=>m.dataset.menu==='format');
       styleMenu.querySelector('.menu-btn').click(); const a1=styleMenu.classList.contains('open');
@@ -217,6 +229,20 @@ ifr.addEventListener('load',()=>{
     ok('格式刷：套用后目标文字格式改变', brushProbe()!==brushBefore, brushBefore+' → '+brushProbe());
     ok('格式刷：套用后自动解除', !$('formatBrushBtn').classList.contains('on'));
     ok('格式刷：状态栏有反馈', /格式刷已套用/.test($('status').textContent), $('status').textContent.slice(0,38));
+    // Word 式：拾取后「只选中目标」即自动套用
+    { const src=h1El(); const r=d.createRange(); r.setStart(src.firstChild||src,0); r.collapse(true);
+      sel().removeAllRanges(); sel().addRange(r); }
+    w.pickFormat();
+    ok('格式刷：拾取后预览区光标提示', $('preview').classList.contains('brush-armed'));
+    const autoTarget=plainParagraph();
+    const autoProbe=()=>{ const sp=autoTarget.querySelector('span');
+      return w.getComputedStyle(sp||autoTarget).fontSize; };
+    const autoBefore=autoProbe();
+    selectIn(autoTarget);
+    w.autoApplyBrush();
+    ok('格式刷：选中目标即自动套用（无需第二次点击）', autoProbe()!==autoBefore, autoBefore+' → '+autoProbe());
+    ok('格式刷：自动套用后解除激活',
+       !$('formatBrushBtn').classList.contains('on')&&!$('preview').classList.contains('brush-armed'));
 
     // ---------- 10. 删除整个色块（保留文字） ----------
     const blkDel=[...d.querySelectorAll('#preview section')].filter(s=>s.style.backgroundColor
