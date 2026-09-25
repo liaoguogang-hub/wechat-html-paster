@@ -261,10 +261,60 @@ ifr.addEventListener('load',()=>{
     const bqCard=q('blockquote');
     { const r=d.createRange(); r.setStart(bqCard.firstChild||bqCard,0); r.collapse(true);
       sel().removeAllRanges(); sel().addRange(r); }
+    const caretCard=(w.findContainer(sel().getRangeAt(0))||{}).el;   // 光标处真正的卡片容器
     $('cardBorderNone').dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
     $('cardBorderNone').click();
     ok('折叠光标下「清除卡片边框」生效（工具条不抢焦点）',
-       !bqCard.style.border&&!bqCard.style.borderLeft, bqCard.getAttribute('style')||'(空)');
+       !!caretCard&&!caretCard.style.border&&!caretCard.style.borderLeft,
+       '目标='+(caretCard&&caretCard.tagName)+' 剩余边框=['+(caretCard&&caretCard.style.borderLeft||'')+']');
+    // ---------- 12. 撤销 / 重做快捷键（文档级，焦点不在预览区也生效） ----------
+    const keyEv=(k,opt)=>d.dispatchEvent(new KeyboardEvent('keydown',Object.assign({key:k,bubbles:true,cancelable:true},opt||{})));
+    const scPar=plainParagraph();
+    selectIn(scPar); w.insertColorBlock();
+    const afterIns=$('output').value;
+    ifr.contentWindow.document.body.focus();
+    keyEv('z',{ctrlKey:true});
+    ok('Ctrl+Z 撤销生效（焦点不在预览区也能用）', $('output').value!==afterIns,
+       afterIns.length+' → '+$('output').value.length+' 字节');
+    keyEv('y',{ctrlKey:true});
+    ok('Ctrl+Y 重做生效', $('output').value===afterIns);
+    keyEv('z',{ctrlKey:true});
+    const undone3=$('output').value;
+    keyEv('Z',{ctrlKey:true,shiftKey:true});
+    ok('Ctrl+Shift+Z 亦可重做', undone3!==afterIns&&$('output').value===afterIns);
+
+    // ---------- 13. 标题清除格式 ----------
+    const h3el=q('h3')||q('h2');
+    $('headStyleSel').value='bottom';
+    w.applyTheme('#0F4C81');
+    const appliedBorder=h3el.style.borderBottom;
+    $('headStyleSel').value='none';
+    w.applyTheme('#0F4C81');
+    ok('标题：下划线模式会加装饰，清除后移除',
+       !!appliedBorder&&!h3el.style.borderBottom&&!h3el.style.paddingBottom,
+       '加='+appliedBorder+' → 清后=['+(h3el.style.borderBottom||'')+']');
+    ok('标题样式含「清除标题格式」选项',
+       [...$('headStyleSel').options].some(o=>/清除标题格式/.test(o.textContent)),
+       [...$('headStyleSel').options].map(o=>o.textContent).join('/'));
+
+    // ---------- 14. 结构合法化：块级不得嵌在段落里（微信粘贴不丢色块/卡片） ----------
+    const nestPar=plainParagraph();
+    const findText=(el)=>{ if(!el) return null; const w=d.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+      let n; while((n=w.nextNode())){ if(n.nodeValue.trim().length>8) return n; } return null; };
+    const nestTextNode=findText(nestPar);
+    if(nestTextNode){
+      const rn=d.createRange(); rn.setStart(nestTextNode,0); rn.setEnd(nestTextNode,4);
+      sel().removeAllRanges(); sel().addRange(rn);
+      w.insertColorBlock();
+      const outHTML=$('output').value;
+      ok('序列化后不存在「段落里套块级」',
+         !/<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?<(section|div|table|ul|ol|blockquote|hr)\b/i.test(outHTML));
+      const reDoc=new DOMParser().parseFromString(outHTML,'text/html');
+      const bgEls=[...reDoc.body.querySelectorAll('[style]')].filter(e=>/background-color/.test(e.getAttribute('style')||''));
+      ok('重新解析（模拟微信）后色块仍存在', bgEls.length>0, '带底色元素 '+bgEls.length+' 个');
+      ok('重新解析后无段落含块级子元素',
+         [...reDoc.body.querySelectorAll('p')].filter(p=>[...p.children].some(c=>/^(SECTION|DIV|TABLE|UL|OL)$/.test(c.tagName))).length===0);
+    } else { ok('结构合法化夹具可用', false, '未找到合适的段落'); }
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');

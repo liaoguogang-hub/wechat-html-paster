@@ -247,6 +247,18 @@ ifr.addEventListener('load',()=>{
       pr.remove();
     });
 
+    // ========== 结构合法性（决定粘贴到公众号后色块/卡片会不会被丢弃） ==========
+    $('input').value=d.getElementById('sample').innerHTML.trim();
+    w.convert();
+    const outHTML=$('output').value;
+    ok('输出无「段落里套块级」（微信会丢弃这种块）',
+       !/<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?<(section|div|table|ul|ol|blockquote|hr|figure|aside)\b/i.test(outHTML));
+    const reDoc=new DOMParser().parseFromString(outHTML,'text/html');
+    ok('重新解析后仍无段落含块级子元素',
+       [...reDoc.body.querySelectorAll('p')].filter(p=>[...p.children].some(c=>/^(SECTION|DIV|TABLE|UL|OL|BLOCKQUOTE)$/.test(c.tagName))).length===0);
+    ok('重新解析后色块/卡片容器数量不减',
+       [...reDoc.body.querySelectorAll('[style]')].filter(e=>/background-color|border/.test(e.getAttribute('style')||'')).length>0,
+       '带底色/边框元素 '+[...reDoc.body.querySelectorAll('[style]')].filter(e=>/background-color|border/.test(e.getAttribute('style')||'')).length+' 个');
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
