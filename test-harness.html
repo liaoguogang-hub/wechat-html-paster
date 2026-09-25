@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>v2 smoke test</title></head>
+<body>
+<iframe id="app" src="./index.html" style="width:1200px;height:900px"></iframe>
+<pre id="results">BOOT</pre>
+<script>
+const out=[];
+function ok(name,cond,extra){ out.push((cond?'PASS ':'FAIL ')+name+(extra?(' | '+extra):'')); }
+const ifr=document.getElementById('app');
+ifr.addEventListener('load',()=>{
+  try{
+    const w=ifr.contentWindow, d=ifr.contentDocument;
+    const $=(id)=>d.getElementById(id);
+
+    // ---------- 1. 载入样例并转换 ----------
+    $('input').value=d.getElementById('sample').innerHTML.trim();
+    w.convert();
+    const html1=$('output').value;
+    ok('convert produces section root', html1.indexOf('<section')===0, html1.slice(0,40));
+    ok('no text-align:start (spec 1.6)', !/text-align:\s*start/i.test(html1));
+    ok('no text-align:end (spec 1.6)', !/text-align:\s*end/i.test(html1));
+
+    // ---------- 2. pre → pre-wrap (spec 1.8) ----------
+    $('input').value='<pre>line1\nline2</pre><p>after</p>';
+    w.convert();
+    ok('white-space:pre → pre-wrap (spec 1.8)', /white-space:pre-wrap/.test($('output').value));
+    // restore sample
+    $('input').value=d.getElementById('sample').innerHTML.trim();
+    w.convert();
+
+    // ---------- 3. 主题色识别 ----------
+    const b=w.detectBrand();
+    ok('detect brand color = #0A5E44', !!b&&b.r===10&&b.g===94&&b.b===68, JSON.stringify(b));
+
+    // ---------- 4. 主题色全局替换 ----------
+    w.setThemeColor('#FA5151');
+    const html2=$('output').value;
+    ok('theme replace: new color present', html2.indexOf('rgb(250, 81, 81)')>=0);
+    ok('theme replace: old brand color gone', html2.indexOf('rgb(10, 94, 68)')<0);
+    ok('theme replace: tint rgba replaced too', html2.indexOf('rgba(250, 81, 81, 0.06)')>=0);
+    ok('theme replace: unrelated red #D6001C kept', /214, 0, 28/.test(html2));
+
+    // ---------- 5. findCard：blockquote 命中 / 普通段落不命中主体容器 ----------
+    const bq=d.querySelector('#preview blockquote');
+    const sel=w.getSelection?null:null;
+    const s2=ifr.contentWindow.getSelection();
+    const r1=d.createRange(); r1.selectNodeContents(bq);
+    s2.removeAllRanges(); s2.addRange(r1);
+    const c1=w.findCard(r1);
+    ok('findCard(blockquote) → blockquote', !!c1&&c1.tagName==='BLOCKQUOTE', c1&&c1.tagName);
+    const p=d.querySelector('#preview h2');
+    const r2=d.createRange(); r2.selectNodeContents(p);
+    s2.removeAllRanges(); s2.addRange(r2);
+    const c2=w.findCard(r2);
+    ok('findCard(normal paragraph) → null (not main container)', c2===null, c2&&c2.tagName);
+
+    // ---------- 6. 卡片背景 / 边框：作用于卡片本身，可删除 ----------
+    // 先把选区放回 blockquote 内（卡片操作作用于「光标所在卡片」）
+    s2.removeAllRanges(); s2.addRange(r1);
+    w.setCardBg('#ffeecc');
+    ok('card bg applied to card', bq.style.getPropertyValue('background-color')==='rgb(255, 238, 204)', bq.style.getPropertyValue('background-color'));
+    w.setCardBg('');
+    ok('card bg removable', !bq.style.getPropertyValue('background-color'), bq.style.getPropertyValue('background-color'));
+    w.setCardBorder('#0000ff');
+    ok('card border on card (3px solid blue)', /3px solid rgb\(0, 0, 255\)|3px solid #0000ff|3px\s+solid\s+blue/i.test(bq.style.getPropertyValue('border-left')), bq.style.getPropertyValue('border-left'));
+    w.setCardBorder('');
+    ok('card border removable', !bq.style.getPropertyValue('border-left'), bq.style.getPropertyValue('border-left'));
+
+    // ---------- 7. 段落背景：可删除 ----------
+    const h2=d.querySelector('#preview h2');
+    const r3=d.createRange(); r3.selectNodeContents(h2);
+    s2.removeAllRanges(); s2.addRange(r3);
+    w.applyToBlocks('background-color','#eeeeee','t');
+    ok('para bg applied', h2.style.getPropertyValue('background-color')==='rgb(238, 238, 238)', h2.style.getPropertyValue('background-color'));
+    w.applyToBlocks('background-color','','t');
+    ok('para bg removable (property removed)', !h2.style.getPropertyValue('background-color'));
+
+    // ---------- 8. 段落边框：左侧强调线 / 可移除 ----------
+    w.applyParaBorder('left','#0A5E44');
+    ok('para border-left applied', /3px solid/.test(h2.style.getPropertyValue('border-left')||''), h2.style.getPropertyValue('border-left'));
+    w.applyParaBorder('none','');
+    ok('para border removed', !h2.style.getPropertyValue('border-left')&&!h2.style.getPropertyValue('border'));
+
+    // ---------- 9. normalizeExport 扁平化 (spec 2.1) ----------
+    const root=d.querySelector('#preview > section');
+    const deep=d.createElement('span');
+    deep.setAttribute('style','color:rgb(250, 81, 81);');
+    let cur=deep;
+    for(let i=0;i<12;i++){ const s=d.createElement('span'); s.setAttribute('style','color:rgb(250, 81, 81);'); cur.appendChild(s); cur=s; }
+    cur.textContent='嵌套测试';
+    const targetP=d.querySelector('#preview p');
+    targetP.appendChild(deep);
+    w.normalizeExport();
+    let depth=0,el=targetP.querySelector('span');
+    while(el){ depth++; el=el.firstElementChild; }
+    ok('flatten: 13-deep same-style chain collapsed', depth===1, 'depth='+depth);
+    ok('flatten: text preserved', targetP.textContent.indexOf('嵌套测试')>=0);
+
+    // ---------- 10. 移除全部字体 ----------
+    w.stripAllFonts();
+    ok('strip all font-family', !/font-family/.test($('output').value));
+
+    // ---------- 11. undo 仍然可用 ----------
+    w.undo();
+    ok('undo works after theme ops', $('output').value.length>0);
+
+    document.getElementById('results').textContent=out.join('\n');
+  }catch(e){
+    document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
+  }
+});
+</script>
+</body>
+</html>

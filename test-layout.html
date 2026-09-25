@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>layout stability test · wechat-html-paster</title></head>
+<body>
+<h2>布局稳定性 / CSS 隔离 测试</h2>
+<iframe id="app" src="./index.html" style="width:1200px;height:900px"></iframe>
+<pre id="results">BOOT</pre>
+<script>
+const out=[];
+function ok(name,cond,extra){ out.push((cond?'PASS ':'FAIL ')+name+(extra?(' | '+extra):'')); }
+const ifr=document.getElementById('app');
+ifr.addEventListener('load',()=>{
+  try{
+    const w=ifr.contentWindow, d=ifr.contentDocument;
+    const $=(id)=>d.getElementById(id);
+    const bar=()=>d.querySelector('.editorbar');
+    const snap=()=>({
+      barH:bar().offsetHeight, barW:bar().offsetWidth,
+      ribbonH:d.querySelector('.ribbon').offsetHeight,
+      statusH:d.querySelector('.statusbar').offsetHeight,
+      fontW:$('fontFamily').offsetWidth,
+      layoutW:d.querySelector('.layout').offsetWidth,
+      headerW:d.querySelector('header').offsetWidth,
+      bodyPadL:w.getComputedStyle(d.body).paddingLeft,
+      bodyBg:w.getComputedStyle(d.body).backgroundColor
+    });
+    const a=snap();                       // 未载入 HTML 时（紧凑态）
+
+    $('input').value=d.getElementById('sample').innerHTML.trim();
+    w.convert();
+
+    // 模拟用户点进预览区并选中文字（触发 reflectSelection / 动态 option）
+    const p=d.querySelector('#preview p');
+    const sel=ifr.contentWindow.getSelection();
+    const r=d.createRange(); r.selectNodeContents(p);
+    sel.removeAllRanges(); sel.addRange(r);
+    w.reflectSelection();
+
+    const b=snap();                       // 载入并选中后
+
+    ok('工具栏高度不变', a.barH===b.barH, a.barH+' -> '+b.barH);
+    ok('工具栏宽度不变', a.barW===b.barW, a.barW+' -> '+b.barW);
+    ok('功能区高度不变', a.ribbonH===b.ribbonH, a.ribbonH+' -> '+b.ribbonH);
+    ok('状态栏高度恒定', a.statusH===b.statusH && a.statusH>0, a.statusH+' -> '+b.statusH);
+    ok('字体下拉宽度固定', a.fontW===b.fontW, a.fontW+' -> '+b.fontW);
+    ok('栅格列宽不变', a.layoutW===b.layoutW, a.layoutW+' -> '+b.layoutW);
+    ok('页头宽度不变', a.headerW===b.headerW, a.headerW+' -> '+b.headerW);
+    // ★ 用户反馈 2 的根因回归：文章 CSS 不得泄漏到工具页面
+    ok('文章 CSS 未泄漏(body padding)', a.bodyPadL===b.bodyPadL, a.bodyPadL+' -> '+b.bodyPadL);
+    ok('文章 CSS 未泄漏(body 背景色)', a.bodyBg===b.bodyBg, a.bodyBg+' -> '+b.bodyBg);
+    ok('输出中不含 <style>', !/<style/i.test($('output').value));
+    ok('状态栏有选区回显（单行）', $('selinfo').textContent.length>0, $('selinfo').textContent.slice(0,26)+'…');
+
+    // ---------- 结构性断言（替代视觉检查） ----------
+    const labels=[...d.querySelectorAll('#ribbon .grp-name')].map(e=>e.textContent.trim());
+    ok('功能区五分组标签顺序正确', labels.join('/')==='字体/段落/插入/卡片/主题', labels.join('/'));
+    ok('段落组含段落背景控件', !!d.querySelector('#ribbon .grp #blockBg')&&!!$('blockBgNone'));
+    ok('段落组含边框控件', !!$('paraBorderSel')&&!!$('paraBorderColor'));
+    ok('QAT 含复制/下载/撤销/重做/预览宽度', !!( $('copy')&&$('download')&&$('undoBtn')&&$('redoBtn')&&$('pvMob')&&$('pvWide') ));
+    ok('主题组含 11 个预设色板', d.querySelectorAll('#themeSw .sw').length===11, d.querySelectorAll('#themeSw .sw').length+' swatches');
+    const ov=[...d.querySelectorAll('#ribbon *')].filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible');
+    ok('功能区无内容溢出/裁切', ov.length===0, ov.length?ov.map(e=>e.className||e.tagName).slice(0,5).join(','):'none');
+    const qatOv=[...d.querySelectorAll('.qat *')].filter(e=>e.scrollWidth>e.clientWidth+1&&w.getComputedStyle(e).overflow==='visible');
+    ok('QAT 无内容溢出', qatOv.length===0, qatOv.length?qatOv.map(e=>e.className||e.tagName).slice(0,5).join(','):'none');
+
+    document.getElementById('results').textContent=out.join('\n');
+  }catch(e){
+    document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
+  }
+});
+</script>
+</body>
+</html>
