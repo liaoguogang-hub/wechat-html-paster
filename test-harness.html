@@ -369,6 +369,37 @@ ifr.addEventListener('load',()=>{
     ok('「清除文字格式」命名清晰且有说明',
        /清除文字格式/.test($('clearFmt').textContent)&&
        /恢复成文章原本的样子/.test([...d.querySelectorAll('[data-menu=edit] .hint')].map(e=>e.textContent).join('')));
+    // ---------- 17. 回归：不得给文字元素刷背景 / 框内外样式一致 ----------
+    // 用一个「带明确样式」的段落作基准（框内外应当一致）
+    const host=(()=>{ const h=d.querySelector('#preview > section > div')||d.querySelector('#preview > section');
+      const p=d.createElement('p');
+      p.setAttribute('style','color:rgb(68, 68, 68);font-size:15px;line-height:28.5px');
+      p.textContent='框内外一致性测试文字';
+      h.appendChild(p); return p; })();
+    const parB=host;
+    const beforeB=new Set([...d.querySelectorAll('#preview section')]);
+    selectIn(parB); w.insertColorBlock();
+    const boxB=[...d.querySelectorAll('#preview section')]
+      .find(s=>!beforeB.has(s)&&/background-color/.test(s.getAttribute('style')||''));
+    ok('色块容器存在且带底色', !!boxB, boxB&&(boxB.getAttribute('style')||'').slice(0,60));
+    // 框内元素不得自带背景（会被刷白盖住底色）
+    const innerBg=[...(boxB?boxB.querySelectorAll('[style]'):[])]
+      .filter(e=>/background-color/.test(e.getAttribute('style')||''));
+    ok('色块内部元素不带 background-color（不会刷白盖住底色）', innerBg.length===0,
+       innerBg.map(e=>e.tagName).join(',')||'0 个');
+    // 整篇输出里，文字类元素都不该被刷上背景
+    const outDoc=new DOMParser().parseFromString($('output').value,'text/html');
+    const textBg=[...outDoc.body.querySelectorAll('p,span,strong,b,em,li')]
+      .filter(e=>/background-color/.test(e.getAttribute('style')||''));
+    ok('整篇输出中段落/行内元素无 background-color（不再刷白）', textBg.length===0,
+       textBg.length?textBg.slice(0,3).map(e=>e.tagName).join(','):'0 个');
+    // 框内外文字样式一致
+    if(boxB){
+      const csIn=w.getComputedStyle(boxB);
+      ok('框内文字样式继承周围段落（颜色/字号一致）',
+         csIn.color==='rgb(68, 68, 68)'&&csIn.fontSize==='15px',
+         '框内 '+csIn.color+'/'+csIn.fontSize+'（应为 rgb(68, 68, 68)/15px）');
+    }
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
