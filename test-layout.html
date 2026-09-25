@@ -130,14 +130,16 @@ ifr.addEventListener('load',()=>{
     const pEl=d.querySelector('#preview p');
     const rr=d.createRange(); rr.setStart(pEl.firstChild||pEl,0); rr.collapse(true);
     s.removeAllRanges(); s.addRange(rr);
-    w.insertColorBlock(); w.insertCard();
-    const rootSec=d.querySelector('#preview > section');
-    const allSec=[...d.querySelectorAll('#preview section,#preview div')];
-    const blk=allSec.filter(x=>x!==rootSec&&x.style.backgroundColor&&!/\d+px\s+solid/.test(x.style.border||'')).pop();
-    const card=allSec.filter(x=>/^\s*\d+px solid/.test(x.style.border||'')).pop();
+    // 用「插入前后 diff」精确定位新容器（避免误选中文章自带的有底色元素）
+    const beforeBlk=new Set([...d.querySelectorAll('#preview section')]);
+    w.insertColorBlock();
+    const blk=[...d.querySelectorAll('#preview section')].find(s=>!beforeBlk.has(s));
+    const beforeCard=new Set([...d.querySelectorAll('#preview section')]);
+    w.insertCard();
+    const card=[...d.querySelectorAll('#preview section')].find(s=>!beforeCard.has(s));
     const csB=w.getComputedStyle(blk), csC=w.getComputedStyle(card);
-    ok('色块：有底色、无边框',
-       csB.backgroundColor!=='rgba(0, 0, 0, 0)'&&csB.borderTopWidth==='0px'&&csB.borderLeftWidth==='0px',
+    ok('色块：有底色 + 同色系细边（微信会丢弃纯底色容器）',
+       csB.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(csB.borderTopWidth)>0,
        csB.backgroundColor+' / border '+csB.borderTopWidth);
     ok('卡片：有边框（宽度>0）', parseFloat(csC.borderLeftWidth)>0, 'border-left '+csC.borderLeftWidth);
 

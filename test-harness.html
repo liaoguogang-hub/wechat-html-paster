@@ -126,7 +126,11 @@ ifr.addEventListener('load',()=>{
     const wrapBlock=newSectionAfter(()=>{ selectIn(pWrap); w.insertColorBlock(); });
     if(wrapBlock) selectIn(wrapBlock);
     ok('插入色块：选中的文字被包进色块', !!wrapBlock, wrapBlock?('内含「'+wrapText+'」'):'未找到包裹容器');
-    ok('色块无边框（纯底色盒）', !!wrapBlock&&!wrapBlock.style.getPropertyValue('border'), wrapBlock&&(wrapBlock.getAttribute('style')||'').slice(0,52));
+    // 色块默认带同色系细边：微信会丢弃「只有底色、没有边框」的容器
+    ok('色块为「底色 + 细边」（微信会丢弃纯底色容器）',
+       !!wrapBlock&&!!wrapBlock.style.getPropertyValue('border')&&/1px solid/.test(wrapBlock.style.border||'')&&
+       !!wrapBlock.style.backgroundColor,
+       wrapBlock&&(wrapBlock.getAttribute('style')||'').slice(0,64));
     selectIn(wrapBlock);
     ok('色块识别为 色块（非卡片）', (w.findContainer(sel().getRangeAt(0))||{}).kind==='block');
 
