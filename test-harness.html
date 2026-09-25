@@ -37,7 +37,7 @@ ifr.addEventListener('load',()=>{
       });
       if(found) return found;
       if(all.length) return all.pop();
-      const host=d.querySelector('#preview > section > div')||d.querySelector('#preview > section');
+      const host=d.querySelector('#preview > section > section')||d.querySelector('#preview > section');
       const np=d.createElement('p'); np.textContent='测试段落'; host.appendChild(np); return np;
     };
     // 容器现在是「外层背景容器 + 内层文本容器」双层结构 → 取最外层那一层
@@ -121,10 +121,10 @@ ifr.addEventListener('load',()=>{
     const psAll2=[...d.querySelectorAll('#preview p')].filter(x=>!x.closest('table'));
     const pWrap=psAll2[psAll2.length-1];
     const wrapText=pWrap.textContent.trim().slice(0,8);
-    selectIn(pWrap);
-    w.insertColorBlock();
-    const wrapBlock=[...d.querySelectorAll('#preview section')].find(s=>s!==rootSec0&&s.style.backgroundColor
-      &&!/\d+px\s+solid/.test(s.style.border||'')&&s.textContent.includes(wrapText));
+    const newSectionAfter=(fn)=>{ const before=new Set([...d.querySelectorAll('#preview section')]);
+      fn(); return [...d.querySelectorAll('#preview section')].find(s=>!before.has(s)); };
+    const wrapBlock=newSectionAfter(()=>{ selectIn(pWrap); w.insertColorBlock(); });
+    if(wrapBlock) selectIn(wrapBlock);
     ok('插入色块：选中的文字被包进色块', !!wrapBlock, wrapBlock?('内含「'+wrapText+'」'):'未找到包裹容器');
     ok('色块无边框（纯底色盒）', !!wrapBlock&&!wrapBlock.style.getPropertyValue('border'), wrapBlock&&(wrapBlock.getAttribute('style')||'').slice(0,52));
     selectIn(wrapBlock);
@@ -133,10 +133,7 @@ ifr.addEventListener('load',()=>{
     // 选中另一段 → 插入卡片
     const pWrap2=psAll2[0];
     const wrapText2=pWrap2.textContent.trim().slice(0,8);
-    selectIn(pWrap2);
-    w.insertCard();
-    const wrapCard=[...d.querySelectorAll('#preview section')].find(s=>/^\s*\d+px solid/.test(s.style.border||'')
-      &&s.textContent.includes(wrapText2));
+    const wrapCard=newSectionAfter(()=>{ selectIn(pWrap2); w.insertCard(); });
     ok('插入卡片：选中的文字被包进卡片', !!wrapCard, wrapCard?('内含「'+wrapText2+'」'):'未找到');
     selectIn(wrapCard);
     ok('卡片识别为 wrapCard', (w.findContainer(sel().getRangeAt(0))||{}).kind==='card');
@@ -145,8 +142,7 @@ ifr.addEventListener('load',()=>{
     const pC=d.querySelectorAll('#preview p')[0];
     const rc=d.createRange(); rc.setStart(pC.firstChild||pC,0); rc.collapse(true);
     sel().removeAllRanges(); sel().addRange(rc);
-    w.insertCard();
-    const phCard=[...d.querySelectorAll('#preview section')].filter(s=>/^\s*\d+px solid/.test(s.style.border||'')).pop();
+    const phCard=newSectionAfter(()=>{ w.insertCard(); });
     ok('未选中文字时插入占位卡片', !!phCard&&/卡片：/.test(phCard.textContent||''), phCard&&(phCard.textContent||'').slice(0,12));
 
     // 普通段落不误判
@@ -256,8 +252,7 @@ ifr.addEventListener('load',()=>{
        !$('formatBrushBtn').classList.contains('on')&&!$('preview').classList.contains('brush-armed'));
 
     // ---------- 10. 删除整个色块（保留文字） ----------
-    const blkDel=[...d.querySelectorAll('#preview section')].filter(s=>s.style.backgroundColor
-      &&!/\d+px\s+solid/.test(s.style.border||'')&&s!==rootSec0).pop();
+    const blkDel=newSectionAfter(()=>{ const p0=plainParagraph(); selectIn(p0); w.insertColorBlock(); });
     ok('删除前存在色块容器', !!blkDel);
     const keepTxt=blkDel?blkDel.textContent.trim().slice(0,8):'';
     { const r=d.createRange(); r.setStart(blkDel.firstChild||blkDel,0); r.collapse(true);
@@ -352,9 +347,12 @@ ifr.addEventListener('load',()=>{
     w.clearBlockAtCaret();
     ok('插入后立刻「清除这个色块的底色」生效', !!box36&&!box36.style.backgroundColor,
        'status='+$('status').textContent.slice(0,24));
-    ok('清除底色后容器仍被识别（可继续操作）',
-       !!w.findContainer(sel().getRangeAt(0)), 'kind='+(w.findContainer(sel().getRangeAt(0))||{}).kind);
-    w.unwrapContainer('block','色块');
+    // 把光标放进刚刚清掉底色的那个容器（它已无底色/无边框，只剩内边距）
+    { const rc=d.createRange(); rc.selectNodeContents(box36); rc.collapse(true);
+      sel().removeAllRanges(); sel().addRange(rc); }
+    const reFound=w.findContainer(sel().getRangeAt(0));
+    ok('清除底色后容器仍被识别（可继续操作）', !!reFound,
+       'kind='+(reFound||{}).kind+' style='+(box36.getAttribute('style')||'').slice(0,60));    w.unwrapContainer('block','色块');
     ok('清除底色后仍能删除容器（保留文字）', !!box36&&!$('preview').contains(box36),
        'status='+$('status').textContent.slice(0,22));
 
@@ -371,7 +369,7 @@ ifr.addEventListener('load',()=>{
        /恢复成文章原本的样子/.test([...d.querySelectorAll('[data-menu=edit] .hint')].map(e=>e.textContent).join('')));
     // ---------- 17. 回归：不得给文字元素刷背景 / 框内外样式一致 ----------
     // 用一个「带明确样式」的段落作基准（框内外应当一致）
-    const host=(()=>{ const h=d.querySelector('#preview > section > div')||d.querySelector('#preview > section');
+    const host=(()=>{ const h=d.querySelector('#preview > section > section')||d.querySelector('#preview > section');
       const p=d.createElement('p');
       p.setAttribute('style','color:rgb(68, 68, 68);font-size:15px;line-height:28.5px');
       p.textContent='框内外一致性测试文字';
@@ -400,6 +398,24 @@ ifr.addEventListener('load',()=>{
          csIn.color==='rgb(68, 68, 68)'&&csIn.fontSize==='15px',
          '框内 '+csIn.color+'/'+csIn.fontSize+'（应为 rgb(68, 68, 68)/15px）');
     }
+    // ---------- 18. 微信兼容后处理（wechatSafe）：div→section / rgba→实色 / 剥表现属性 ----------
+    const doc18=new DOMParser().parseFromString($('output').value,'text/html');
+    ok('输出中不残留 <div>（div 会被微信吞掉、背景全丢）',
+       doc18.body.querySelectorAll('div').length===0,
+       'div 数量='+doc18.body.querySelectorAll('div').length);
+    ok('输出中无 rgba 半透明色（部分微信版本会丢）',
+       !/rgba\(\s*\d/.test($('output').value));
+    const presentAttrs=[...doc18.body.querySelectorAll('*')]
+      .filter(e=>['width','height','align','bgcolor','border','cellpadding','cellspacing','valign','nowrap'].some(a=>e.hasAttribute(a)));
+    ok('输出中无 HTML 表现属性（会被判固定宽度）', presentAttrs.length===0,
+       presentAttrs.slice(0,3).map(e=>e.tagName).join(',')||'0 个');
+    const tbl=doc18.body.querySelector('table');
+    ok('表格补了 width:100%', !tbl||/width:\s*100%/i.test(tbl.getAttribute('style')||''),
+       tbl?(tbl.getAttribute('style')||'').slice(0,40):'无表格');
+    // 色块仍然是 section 且带背景/圆角/内边距
+    const box18=[...doc18.body.querySelectorAll('section')].filter(s=>/background-color/.test(s.getAttribute('style')||'')
+      &&/border-radius/.test(s.getAttribute('style')||'')&&/padding/.test(s.getAttribute('style')||''));
+    ok('色块/卡片在输出中保持 section + 背景 + 圆角 + 内边距', box18.length>0, box18.length+' 个');
     document.getElementById('results').textContent=out.join('\n');
   }catch(e){
     document.getElementById('results').textContent='ERROR: '+e.message+'\n'+(e.stack||'');
